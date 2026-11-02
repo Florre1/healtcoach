@@ -1,4 +1,22 @@
-# Prüfstand der ersten Testversion
+# Prüfstand
+
+## Version 1.0.1
+
+- 56 erfolgreiche automatisierte Tests, einschließlich simulierter BLE-Abbrüche,
+  verspäteter Antworten, Schreib-Zeitüberschreitungen, doppelter Verbindungsversuche,
+  Berechtigungsdialoge, Bluetooth-Abschaltung und fehlgeschlagener Speicherung.
+- Protokolltests prüfen Paketfolge, Wiederholungen, Profilzuordnung und
+  unvollständige Messungen. Bereitschaft erst nach Bestätigung des Messstarts.
+- Codeanalyse ohne Befunde.
+- Signierte Release-APK für Android 8+, ARM32, ARM64 und x86-64 gebaut;
+  Signatur mit `apksigner verify` geprüft und identisch zu Version 1.0.0.
+- Update von signierter Version 1.0.0 auf 1.0.1 mit `adb install -r` auf dem
+  eigenen API-34-Emulator erfolgreich installiert und gestartet.
+- Android-Integrationstest auf API 34 erneut erfolgreich: Profilformular,
+  manuelle Messung, Diagramme, Profiltrennung und Datenpersistenz.
+- Funk- und Firmwaretest an der konkreten Waage weiterhin offen.
+
+## Version 1.0.0
 
 Geprüft am 2. November 2026.
 

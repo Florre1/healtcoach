@@ -58,7 +58,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> selectProfile(String id) async {
-    await scale.disconnect();
+    await scale.disconnect(quiet: true);
     activeId = id;
     await repository.setSetting('activeProfile', id);
     await refresh();
@@ -73,9 +73,10 @@ class AppController extends ChangeNotifier {
     await refresh();
   }
 
-  Future<void> addMeasurement(Measurement m) async {
-    await repository.saveMeasurement(m);
+  Future<bool> addMeasurement(Measurement m) async {
+    final inserted = await repository.saveMeasurement(m);
     if (activeId == m.profileId) await refresh();
+    return inserted;
   }
 
   Future<void> removeMeasurement(String id) async {

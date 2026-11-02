@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../app_controller.dart';
+import '../version.dart';
 import '../domain/models.dart';
 import '../bluetooth/scale_connection.dart';
 import 'forms.dart';
@@ -535,9 +536,7 @@ class _HomeState extends State<Home> {
                     : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
-            if (s.phase == ConnectionPhase.connecting ||
-                s.phase == ConnectionPhase.synchronizing ||
-                s.phase == ConnectionPhase.scanning) ...[
+            if (s.working) ...[
               const SizedBox(height: 10),
               const LinearProgressIndicator(minHeight: 2),
             ],
@@ -589,10 +588,7 @@ class _HomeState extends State<Home> {
                         ),
                       ),
                     const SizedBox(height: 16),
-                    if (s.phase == ConnectionPhase.scanning ||
-                        s.phase == ConnectionPhase.connecting ||
-                        s.phase == ConnectionPhase.synchronizing)
-                      const LinearProgressIndicator(),
+                    if (s.working) const LinearProgressIndicator(),
                     for (final device in s.devices.values)
                       ListTile(
                         contentPadding: EdgeInsets.zero,
@@ -1080,7 +1076,7 @@ class _HomeState extends State<Home> {
                 ),
                 onTap: () => guarded(context, () async {
                   final saved = await c.exportFile(
-                    'HealthCoach 1.0.0 · SBF70\n${c.scale.diagnosticLog.join('\n')}',
+                    'HealthCoach $appVersion · SBF70\n${c.scale.diagnosticLog.join('\n')}',
                     'healthcoach-bluetooth.txt',
                     'text/plain',
                   );
@@ -1091,12 +1087,12 @@ class _HomeState extends State<Home> {
                 leading: const Icon(Icons.info_outline),
                 title: const Text('Über HealthCoach'),
                 subtitle: const Text(
-                  'Version 1.0.0 · Für deinen täglichen Fortschritt',
+                  'Version $appVersion · Für deinen täglichen Fortschritt',
                 ),
                 onTap: () => showAboutDialog(
                   context: context,
                   applicationName: 'HealthCoach',
-                  applicationVersion: '1.0.0',
+                  applicationVersion: appVersion,
                   applicationLegalese: 'GPL-3.0-or-later · Quellcode: github.com/Florre1/healtcoach',
                   children: [
                     const Padding(

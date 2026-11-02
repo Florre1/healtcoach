@@ -96,7 +96,12 @@ void main() {
           0x82,
         ]);
         final ready = protocol.receive([0xe7, 0xf0, 0x31, 0]);
-        expect(ready.whereType<ScaleReady>(), hasLength(1));
+        expect(ready.whereType<ScaleReady>(), isEmpty);
+        expect(protocol.phase, 'starting');
+        expect(
+          protocol.receive([0xe7, 0xf0, 0x40, 0]).whereType<ScaleReady>(),
+          hasLength(1),
+        );
         expect(
           ready.whereType<ScaleBound>().single.remoteId,
           '0000000000000065',
@@ -129,7 +134,11 @@ void main() {
       expect(first.whereType<ScaleReading>(), isEmpty);
       final second = protocol.receive([0xe7, 0x42, 2, 2, ...payload.skip(11)]);
       expect(second.whereType<ScaleReading>().single.measurement.weight, 80);
-      expect(second.whereType<ScaleReady>(), hasLength(1));
+      expect(second.whereType<ScaleReady>(), isEmpty);
+      expect(
+        protocol.receive([0xe7, 0xf0, 0x40, 0]).whereType<ScaleReady>(),
+        hasLength(1),
+      );
       expect(
         second.whereType<SendFrame>().any(
           (e) => [0x43, 0x32, 0x49].contains(e.bytes[1]),
@@ -150,7 +159,7 @@ void main() {
         final repeat = protocol.receive(last);
         expect(repeat.whereType<SendFrame>(), hasLength(1));
         expect(repeat.whereType<ScaleReading>(), isEmpty);
-        expect(protocol.phase, 'ready');
+        expect(protocol.phase, 'starting');
       },
     );
     test('does not merge saved chunks that arrive out of sequence', () {
@@ -168,6 +177,7 @@ void main() {
     test('does not assign a different remote user live measurement to active profile', () {
       existingUser(protocol);
       protocol.receive([0xe7, 0xf0, 0x41, 0, 0]);
+      protocol.receive([0xe7, 0xf0, 0x40, 0]);
       final data = measurementPacket();
       protocol.receive([0xe7, 0x59, 3, 1, 1, ...idBytes('0000000000000099')]);
       protocol.receive([0xe7, 0x59, 3, 2, ...data.take(11)]);
@@ -187,6 +197,7 @@ void main() {
       () {
         existingUser(protocol);
         protocol.receive([0xe7, 0xf0, 0x41, 0, 0]);
+        protocol.receive([0xe7, 0xf0, 0x40, 0]);
         expect(
           protocol.receive([0xe7, 0x58, 0, 6, 64]).whereType<ScaleReading>(),
           isEmpty,

@@ -65,10 +65,11 @@ class _HealthCoachAppState extends State<HealthCoachApp>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      widget.controller.scale.resume();
       unawaited(widget.controller.reconnect());
     }
     if (state == AppLifecycleState.paused) {
-      unawaited(widget.controller.scale.disconnect(quiet: true));
+      unawaited(widget.controller.scale.pause());
     }
   }
 

@@ -17,7 +17,8 @@ class SendFrame extends ScaleEvent {
 class ScaleMessage extends ScaleEvent {
   final String text;
   final bool error;
-  ScaleMessage(this.text, {this.error = false});
+  final bool retryable;
+  ScaleMessage(this.text, {this.error = false, this.retryable = false});
 }
 
 class ScaleBattery extends ScaleEvent {
@@ -67,10 +68,16 @@ class SanitasProtocol {
   String phase = 'init';
   int capacity = 8;
   List<int>? _savedPart, _livePart;
-  int? _savedIndex, _savedCount;
+  int? _savedCount, _userCount;
   String? _liveOwner;
-  String? _lastSavedFrame;
+  DateTime? _liveStarted;
+  final _savedFrames = <int, String>{};
+  final _userFrames = <int, String>{};
+  final _liveFrames = <int, String>{};
   final _seen = <String>{};
+  bool get hasPartialLive => _liveStarted != null;
+  String get progress =>
+      '$phase:$_userCount:${users.length}:$_savedCount:${_savedFrames.length}';
   SanitasProtocol(this.profile, {DateTime Function()? clock})
     : now = clock ?? DateTime.now;
   List<ScaleEvent> start() => [
@@ -92,9 +99,9 @@ class SanitasProtocol {
     (profile.sex == 'male' ? 0x80 : 0) | profile.activity,
   ];
 
-  List<ScaleEvent> _fail(String message) {
+  List<ScaleEvent> _fail(String message, {bool retryable = false}) {
     phase = 'error';
-    return [ScaleMessage(message, error: true)];
+    return [ScaleMessage(message, error: true, retryable: retryable)];
   }
 
   List<ScaleEvent> _history() {
@@ -103,13 +110,8 @@ class SanitasProtocol {
   }
 
   List<ScaleEvent> _ready() {
-    phase = 'ready';
-    return [
-      ScaleBound(remote!),
-      ScaleReady(),
-      ScaleMessage('Bereit. Steige barfuß auf die Waage.'),
-      command(0x40, _uid),
-    ];
+    phase = 'starting';
+    return [ScaleBound(remote!), command(0x40, _uid)];
   }
 
   List<ScaleEvent> _selectUser() {
@@ -163,10 +165,11 @@ class SanitasProtocol {
     ];
   }
 
-  List<ScaleEvent> receive(List<int> b) {
+  List<ScaleEvent> receive(List<int> b, {DateTime? receivedAt}) {
     if (phase == 'error' || b.isEmpty) return [];
     if (b[0] == 0xe6 && phase == 'init') {
-      if (b.length < 3 || b[1] != 0 || b[2] != 0x20) {
+      if (b.length < 3) return [];
+      if (b[1] != 0 || b[2] != 0x20) {
         return _fail('Die Waage hat die Anmeldung abgelehnt.');
       }
       phase = 'status';
@@ -181,27 +184,35 @@ class SanitasProtocol {
         if (b.length < 4) return [];
         return _response(b);
       case 0x34:
-        if (b.length < 16 || phase != 'users') return [];
+        if (b.length != 16) return [];
         final count = b[2], index = b[3];
-        if (index < 1 || index > count || count > 8) {
-          return _fail('Ungültige Benutzerliste von der Waage.');
-        }
-        final result = <ScaleEvent>[ack(b)];
-        if (index == users.length + 1) {
-          users.add(
-            RemoteUser(
-              hexBytes(b.sublist(4, 12)),
-              String.fromCharCodes(b.sublist(12, 15).takeWhile((x) => x != 0)),
-              1900 + b[15],
-            ),
+        final key = hexBytes(b);
+        if (_userFrames[index] == key) return [ack(b)];
+        if (phase != 'users') return [];
+        if (index < 1 ||
+            index > count ||
+            count > capacity ||
+            (_userCount != null && count != _userCount) ||
+            index != users.length + 1) {
+          return _fail(
+            'Benutzerliste unvollständig oder widersprüchlich. Bitte erneut verbinden.',
+            retryable: true,
           );
-        } else if (index > users.length) {
-          return _fail('Benutzerliste unvollständig. Bitte erneut verbinden.');
         }
+        _userCount = count;
+        _userFrames[index] = key;
+        final result = <ScaleEvent>[ack(b)];
+        users.add(
+          RemoteUser(
+            hexBytes(b.sublist(4, 12)),
+            String.fromCharCodes(b.sublist(12, 15).takeWhile((x) => x != 0)),
+            1900 + b[15],
+          ),
+        );
         if (users.length == count) result.addAll(_selectUser());
         return result;
       case 0x58:
-        if (b.length < 5) return [];
+        if (b.length != 5 || phase != 'ready') return [];
         final kg = u16(b, 3) * .05;
         return [ack(b), if (kg > 0 && kg <= 180) ScaleLiveWeight(kg)];
       case 0x42:
@@ -209,45 +220,64 @@ class SanitasProtocol {
         // The scale may retransmit a notification when its ACK was lost.
         // ACK it again without consuming a second part or storing twice.
         final frameKey = hexBytes(b);
-        if (frameKey == _lastSavedFrame) return [ack(b)];
+        if (_savedFrames[b[3]] == frameKey) return [ack(b)];
         if (phase != 'history') return [];
         final index = b[3], count = b[2];
-        if (count == 0 || count.isOdd || index < 1 || index > count) {
-          return _fail('Ungültige Messdatenfolge. Bitte neu verbinden.');
+        if (count == 0 ||
+            count.isOdd ||
+            index < 1 ||
+            index > count ||
+            index != _savedFrames.length + 1 ||
+            (_savedCount != null && count != _savedCount)) {
+          return _fail(
+            'Messdaten unvollständig oder widersprüchlich. Bitte neu verbinden.',
+            retryable: true,
+          );
         }
         final out = <ScaleEvent>[ack(b)];
-        _lastSavedFrame = frameKey;
+        _savedFrames[index] = frameKey;
+        _savedCount = count;
         if (index.isOdd) {
           _savedPart = b.sublist(4);
-          _savedIndex = index;
-          _savedCount = count;
         } else {
-          if (_savedPart == null ||
-              _savedIndex != index - 1 ||
-              _savedCount != count) {
+          if (_savedPart == null) {
             return _fail(
               'Messdaten unvollständig. Die Waage behält ihre gespeicherten Werte. Bitte neu verbinden.',
+              retryable: true,
             );
           }
           out.addAll(_decode([..._savedPart!, ...b.sublist(4)]));
           _savedPart = null;
         }
-        if (index == count) out.addAll(_ready());
+        if (index == count && phase != 'error') out.addAll(_ready());
         return out;
       case 0x59:
-        if (b.length < 4 || remote == null) return [];
+        if (b.length < 4 || remote == null || phase != 'ready') return [];
         if (b[2] != 3 || b[3] < 1 || b[3] > 3) {
           return _fail(
             'Unbekanntes Messformat. Bitte Diagnoseprotokoll exportieren.',
           );
         }
         final out = <ScaleEvent>[ack(b)];
-        if (b[3] == 1 && b.length >= 13) {
+        final time = receivedAt ?? now();
+        if (_liveStarted != null &&
+            time.difference(_liveStarted!) > const Duration(seconds: 15)) {
+          _clearLive();
+        }
+        final key = hexBytes(b);
+        if (_liveFrames[b[3]] == key) return out;
+        if (b[3] == 1 && b.length == 13 && b[4] == 1) {
+          _clearLive();
+          _liveStarted = time;
           _liveOwner = hexBytes(b.sublist(5, 13));
-          _livePart = null;
-        } else if (b[3] == 2 && b.length == 15) {
+          _liveFrames[1] = key;
+        } else if (b[3] == 2 && b.length == 15 && _liveFrames.length == 1) {
           _livePart = b.sublist(4);
-        } else if (b[3] == 3 && b.length == 15 && _livePart != null) {
+          _liveFrames[2] = key;
+        } else if (b[3] == 3 &&
+            b.length == 15 &&
+            _livePart != null &&
+            _liveFrames.length == 2) {
           if (_liveOwner == remote) {
             out.addAll(_decode([..._livePart!, ...b.sublist(4)]));
           } else {
@@ -257,13 +287,28 @@ class SanitasProtocol {
               ),
             );
           }
-          _livePart = null;
-          _liveOwner = null;
+          _clearLive();
+          // ACK a repeated final packet, but never combine it with old data.
+          _liveFrames[3] = key;
+        } else {
+          _clearLive();
+          out.add(
+            ScaleMessage(
+              'Unvollständige Messung verworfen. Bitte erneut wiegen.',
+            ),
+          );
         }
         return out;
       default:
         return [];
     }
+  }
+
+  void _clearLive() {
+    _livePart = null;
+    _liveOwner = null;
+    _liveStarted = null;
+    _liveFrames.clear();
   }
 
   List<ScaleEvent> _response(List<int> b) {
@@ -276,6 +321,16 @@ class SanitasProtocol {
     if (cmd == 0x33 && phase == 'users' && b.length >= 6) {
       if (b[3] != 0) return _fail('Benutzerliste konnte nicht gelesen werden.');
       capacity = b[5];
+      if (capacity < 1 ||
+          capacity > 8 ||
+          b[4] > capacity ||
+          (_userCount != null && _userCount != b[4])) {
+        return _fail(
+          'Ungültige Benutzeranzahl von der Waage.',
+          retryable: true,
+        );
+      }
+      _userCount = b[4];
       if (b[4] == 0) return _selectUser();
     }
     if (cmd == 0x36 && phase == 'details') {
@@ -321,12 +376,24 @@ class SanitasProtocol {
       if (b.length < 5 || b[4] != 0) {
         return _fail('Gespeicherte Messungen konnten nicht gelesen werden.');
       }
+      if (b[3].isOdd || (_savedCount != null && _savedCount != b[3])) {
+        return _fail(
+          'Ungültige Anzahl gespeicherter Messdaten.',
+          retryable: true,
+        );
+      }
+      _savedCount = b[3];
       if (b[3] == 0) return _ready();
     }
-    if (cmd == 0x40 && b[3] != 0) {
-      return _fail(
-        'Messung konnte nicht gestartet werden. Waage kurz antippen und erneut verbinden.',
-      );
+    if (cmd == 0x40 && phase == 'starting') {
+      if (b[3] != 0) {
+        return _fail(
+          'Messung konnte nicht gestartet werden. Waage kurz antippen und erneut verbinden.',
+          retryable: true,
+        );
+      }
+      phase = 'ready';
+      return [ScaleReady()];
     }
     return [];
   }
@@ -335,9 +402,9 @@ class SanitasProtocol {
     try {
       final m = decodeMeasurement(bytes, profile, now: now());
       if (m.time.isBefore(profile.trackingSince) || !_seen.add(m.id)) return [];
-      return [ScaleReading(m), ScaleMessage('Messung empfangen.')];
+      return [ScaleReading(m)];
     } on FormatException catch (e) {
-      return [ScaleMessage(e.message, error: true)];
+      return _fail(e.message, retryable: true);
     }
   }
 }

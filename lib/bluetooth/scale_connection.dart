@@ -2,23 +2,56 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
-import 'package:device_info_plus/device_info_plus.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../domain/models.dart';
+import 'ble_transport.dart';
 import 'sanitas_protocol.dart';
 
-enum ConnectionPhase { idle, scanning, connecting, synchronizing, ready, error }
+enum ConnectionPhase {
+  idle,
+  checking,
+  scanning,
+  connecting,
+  synchronizing,
+  retrying,
+  ready,
+  error,
+}
+
+/// Each attempt owns its streams, timers and queue. Old callbacks cannot update
+/// the UI, write to a new GATT link, or schedule another retry.
+class _Session {
+  Profile profile;
+  final DiscoveredDevice? device;
+  final int attempt;
+  _Session(this.profile, {this.device, this.attempt = 1});
+  StreamSubscription<DiscoveredDevice>? scan;
+  StreamSubscription<ConnectionStateUpdate>? link;
+  StreamSubscription<List<int>>? notifications;
+  StreamSubscription<BleStatus>? status;
+  Timer? deadline, progressTimer, handshake, retry, measurement;
+  Future<void> queue = Future.value();
+  bool connecting = false, connected = false, preparing = false;
+  int pending = 0;
+  SanitasProtocol? protocol;
+  void cancelTimers() {
+    deadline?.cancel();
+    progressTimer?.cancel();
+    handshake?.cancel();
+    retry?.cancel();
+    measurement?.cancel();
+  }
+}
 
 class ScaleConnection extends ChangeNotifier {
-  final FlutterReactiveBle _ble = FlutterReactiveBle();
-  final Future<void> Function(Measurement) onReading;
+  final BleTransport _ble;
+  final Future<bool> Function(Measurement) onReading;
   final Future<void> Function(Profile, String, String, String) onBound;
-  ScaleConnection({required this.onReading, required this.onBound});
-  static final service = Uuid.parse('0000ffe0-0000-1000-8000-00805f9b34fb');
-  static final characteristic = Uuid.parse(
-    '0000ffe1-0000-1000-8000-00805f9b34fb',
-  );
+  ScaleConnection({
+    required this.onReading,
+    required this.onBound,
+    BleTransport? transport,
+  }) : _ble = transport ?? AndroidBleTransport();
   ConnectionPhase phase = ConnectionPhase.idle;
   String message = 'Verbinde deine Waage für die erste Messung.';
   String? connectedName;
@@ -26,19 +59,14 @@ class ScaleConnection extends ChangeNotifier {
   double? liveWeight;
   final devices = <String, DiscoveredDevice>{};
   final List<String> diagnosticLog = [];
-  StreamSubscription<DiscoveredDevice>? _scan;
-  StreamSubscription<ConnectionStateUpdate>? _link;
-  StreamSubscription<List<int>>? _notifications;
-  Timer? _timeout;
-  int _generation = 0;
-  Future<void> _queue = Future.value();
-  bool _disposed = false;
-  bool get busy => [
-    ConnectionPhase.scanning,
-    ConnectionPhase.connecting,
-    ConnectionPhase.synchronizing,
-    ConnectionPhase.ready,
-  ].contains(phase);
+  _Session? _session;
+  Future<void> _cleanup = Future.value();
+  Future<void> _persistence = Future.value();
+  bool _disposed = false, _manuallyStopped = false, _background = false;
+  bool get busy =>
+      phase != ConnectionPhase.idle && phase != ConnectionPhase.error;
+  bool get working => busy && phase != ConnectionPhase.ready;
+  bool _current(_Session s) => !_disposed && identical(s, _session);
   void _notify() {
     if (!_disposed) notifyListeners();
   }
@@ -55,288 +83,449 @@ class ScaleConnection extends ChangeNotifier {
     _notify();
   }
 
-  Future<bool> _permissions(bool request) async {
-    final sdk = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
-    final permissions = sdk >= 31
-        ? [Permission.bluetoothScan, Permission.bluetoothConnect]
-        : [Permission.locationWhenInUse];
-    for (final permission in permissions) {
-      var status = await permission.status;
-      if (!status.isGranted && request) status = await permission.request();
-      if (!status.isGranted) {
-        _state(
-          ConnectionPhase.error,
-          status.isPermanentlyDenied
-              ? 'Bluetooth-Zugriff fehlt. Erlaube „Geräte in der Nähe“ in den Android-App-Einstellungen.'
-              : sdk >= 31
-              ? 'Erlaube Geräte in der Nähe, damit die App deine Waage findet.'
-              : 'Android benötigt die Standortfreigabe für die Bluetooth-Suche.',
-        );
-        return false;
-      }
+  Future<void> _cancel(StreamSubscription<dynamic>? subscription) async {
+    if (subscription == null) return;
+    try {
+      await subscription.cancel().timeout(const Duration(seconds: 3));
+    } catch (e) {
+      _log('CLEANUP $e');
     }
-    var status = _ble.status;
-    if (status == BleStatus.unknown) {
-      status = await _ble.statusStream
-          .firstWhere((s) => s != BleStatus.unknown)
-          .timeout(const Duration(seconds: 5));
-    }
-    if (status != BleStatus.ready) {
-      _state(ConnectionPhase.error, switch (status) {
-        BleStatus.poweredOff =>
-          'Schalte Bluetooth am Handy ein und versuche es erneut.',
-        BleStatus.locationServicesDisabled => 'Aktiviere die Standortfunktion für die Bluetooth-Suche auf dieser Android-Version.',
-        BleStatus.unsupported =>
-          'Dieses Gerät unterstützt kein Bluetooth Low Energy.',
-        _ => 'Bluetooth ist noch nicht bereit. Prüfe die App-Berechtigungen.',
+  }
+
+  void _replace(_Session? next) {
+    final old = _session;
+    _session = next; // Invalidate synchronously, before the first await.
+    old?.cancelTimers();
+    if (old != null) {
+      _cleanup = _cleanup.then((_) async {
+        await Future.wait([
+          _cancel(old.notifications),
+          _cancel(old.scan),
+          _cancel(old.link),
+          _cancel(old.status),
+        ]);
       });
-      return false;
     }
-    return true;
   }
 
   Future<void> scan(Profile profile, {bool automatic = false}) async {
-    if (busy) return;
-    await disconnect(quiet: true);
-    final generation = _generation;
+    if (_disposed || busy || _background || (automatic && _manuallyStopped)) {
+      return;
+    }
+    if (!automatic) _manuallyStopped = false;
+    final s = _Session(profile);
+    _replace(s);
     devices.clear();
     liveWeight = null;
     battery = null;
-    try {
-      if (!await _permissions(!automatic) || generation != _generation) return;
-      _state(
-        ConnectionPhase.scanning,
-        'Tippe die Waage kurz an. Suche nach Sanitas SBF 70 …',
-      );
-      _scan = _ble
-          .scanForDevices(withServices: [], scanMode: ScanMode.lowLatency)
-          .listen(
-            (device) {
-              if (generation != _generation) return;
-              final name = device.name.toUpperCase().replaceAll(
-                RegExp(r'[^A-Z0-9]'),
-                '',
-              );
-              if (!name.contains('SBF70') && device.id != profile.deviceId) {
-                return;
-              }
-              devices[device.id] = device;
-              _notify();
-              if (automatic &&
-                  device.id == profile.deviceId &&
-                  phase == ConnectionPhase.scanning) {
-                unawaited(connect(profile, device));
-              }
-            },
-            onError: (Object e) {
-              if (generation == _generation) {
-                unawaited(
-                  _fail(
-                    'Bluetooth-Suche fehlgeschlagen. Bitte Bluetooth prüfen und erneut suchen.',
-                    e,
-                  ),
-                );
-              }
-            },
-          );
-      _timeout = Timer(const Duration(seconds: 25), () {
-        unawaited(_scan?.cancel());
-        _scan = null;
-        if (generation == _generation) {
-          _state(
-            ConnectionPhase.idle,
-            devices.isEmpty
-                ? 'Keine Waage gefunden. Waage aktivieren und Sanitas-App schließen, dann erneut suchen.'
-                : 'Wähle deine Waage aus der Liste.',
-          );
-        }
-      });
-    } catch (e) {
-      if (generation == _generation) {
-        await _fail(
-          'Bluetooth konnte nicht gestartet werden. Bitte erneut versuchen.',
-          e,
-        );
-      }
-    }
+    connectedName = null;
+    _state(ConnectionPhase.checking, 'Bluetooth wird vorbereitet …');
+    await _start(s, requestPermission: !automatic, automatic: automatic);
   }
 
   Future<void> connect(Profile profile, DiscoveredDevice device) async {
-    if (phase == ConnectionPhase.connecting ||
-        phase == ConnectionPhase.synchronizing ||
-        phase == ConnectionPhase.ready) {
+    if (_disposed ||
+        _background ||
+        (busy && phase != ConnectionPhase.scanning)) {
       return;
     }
-    _state(ConnectionPhase.connecting, 'Verbindung zur Waage wird aufgebaut …');
-    await disconnect(quiet: true);
-    final generation = _generation;
-    final protocol = SanitasProtocol(profile);
-    final target = QualifiedCharacteristic(
-      deviceId: device.id,
-      serviceId: service,
-      characteristicId: characteristic,
-    );
+    _manuallyStopped = false;
+    final s = _Session(profile, device: device);
+    _replace(s);
+    liveWeight = null;
+    battery = null;
     connectedName = device.name.isEmpty ? 'Sanitas SBF 70' : device.name;
     _state(ConnectionPhase.connecting, 'Verbindung zur Waage wird aufgebaut …');
-    void deadline() {
-      _timeout?.cancel();
-      _timeout = Timer(const Duration(seconds: 15), () {
-        if (generation == _generation && phase != ConnectionPhase.ready) {
-          unawaited(
-            _fail(
-              'Die Waage antwortet nicht. Aktiviere sie erneut und schließe andere Waagen-Apps.',
-            ),
-          );
-        }
-      });
-    }
+    await _start(s, requestPermission: true);
+  }
 
-    Future<void> events(List<ScaleEvent> events) async {
-      for (final event in events) {
-        if (generation != _generation) return;
-        switch (event) {
-          case SendFrame():
-            _log('TX ${hexBytes(event.bytes)}');
-            await _ble
-                .writeCharacteristicWithResponse(target, value: event.bytes)
-                .timeout(const Duration(seconds: 6));
-          case ScaleMessage():
-            if (event.error) {
-              await _fail(event.text);
-              return;
-            }
-            message = event.text;
-            _notify();
-          case ScaleBound():
-            await onBound(profile, device.id, connectedName!, event.remoteId);
-          case ScaleReady():
-            _timeout?.cancel();
-            phase = ConnectionPhase.ready;
-            _notify();
-          case ScaleBattery():
-            battery = event.percent;
-            _notify();
-          case ScaleLiveWeight():
-            liveWeight = event.kg;
-            _notify();
-          case ScaleReading():
-            await onReading(event.measurement);
-            liveWeight = event.measurement.weight;
-            message = 'Messung gespeichert. Dein Verlauf ist aktuell.';
-            _notify();
-        }
+  Future<void> _start(
+    _Session s, {
+    required bool requestPermission,
+    bool automatic = false,
+  }) async {
+    try {
+      await _cleanup;
+      await _persistence;
+      if (!_current(s)) return;
+      s.preparing = requestPermission;
+      await _ble
+          .prepare(requestPermission: requestPermission)
+          .timeout(const Duration(seconds: 60));
+      if (!_current(s)) return;
+      s.preparing = false;
+      if (_background) {
+        await disconnect(quiet: true);
+        return;
       }
+      s.status = _ble.status.listen(
+        (status) {
+          if (_current(s) &&
+              status != BleStatus.ready &&
+              status != BleStatus.unknown) {
+            _fail(s, bluetoothStatusMessage(status), retry: false);
+          }
+        },
+        onError: (Object e) => _fail(
+          s,
+          'Bluetooth-Status konnte nicht gelesen werden.',
+          error: e,
+          retry: false,
+        ),
+      );
+      if (!_current(s)) return;
+      if (s.device == null || s.attempt > 1) {
+        _search(s, automatic: automatic || s.device != null);
+      } else {
+        _openLink(s);
+      }
+    } on BluetoothUnavailable catch (e) {
+      _fail(s, e.message, retry: false);
+    } catch (e) {
+      _fail(
+        s,
+        'Bluetooth konnte nicht gestartet werden. Bitte erneut suchen.',
+        error: e,
+      );
     }
+  }
 
-    void enqueue(Future<void> Function() action) {
-      _queue = _queue
-          .then((_) async {
-            if (generation == _generation) await action();
-          })
-          .catchError((Object e) async {
-            if (generation == _generation) {
-              await _fail(
-                'Verbindung unterbrochen oder Daten konnten nicht gespeichert werden. Bitte erneut verbinden.',
-                e,
-              );
-            }
-          });
-    }
+  void _search(_Session s, {required bool automatic}) {
+    _state(
+      ConnectionPhase.scanning,
+      s.attempt > 1
+          ? 'Suche erneut nach deiner Waage (${s.attempt}/3). Bitte kurz antippen …'
+          : 'Tippe die Waage kurz an. Suche nach Sanitas SBF 70 …',
+    );
+    s.scan = _ble.scan().listen(
+      (device) {
+        if (!_current(s) || s.connecting) return;
+        final name = device.name.toUpperCase().replaceAll(
+          RegExp(r'[^A-Z0-9]'),
+          '',
+        );
+        final targetId = s.device?.id ?? s.profile.deviceId;
+        if (!name.contains('SBF70') && device.id != targetId) return;
+        devices[device.id] = device;
+        _notify();
+        if (automatic && device.id == targetId) {
+          if (s.device == null) {
+            unawaited(connect(s.profile, device));
+          } else {
+            s.connecting = true;
+            s.deadline?.cancel();
+            final scan = s.scan;
+            unawaited(
+              _cancel(scan).then((_) {
+                if (!_current(s)) return;
+                s.scan = null;
+                try {
+                  _openLink(s);
+                } catch (e) {
+                  _fail(s, 'Verbindung zur Waage fehlgeschlagen.', error: e);
+                }
+              }),
+            );
+          }
+        }
+      },
+      onError: (Object e) => _fail(
+        s,
+        'Bluetooth-Suche fehlgeschlagen. Bitte Bluetooth prüfen.',
+        error: e,
+      ),
+      onDone: () {
+        if (_current(s) && !s.connecting) {
+          _fail(s, 'Bluetooth-Suche wurde unterbrochen. Bitte erneut suchen.');
+        }
+      },
+    );
+    s.deadline = Timer(Duration(seconds: s.device == null ? 25 : 10), () {
+      if (!_current(s)) return;
+      if (s.device != null) {
+        _fail(
+          s,
+          'Die Waage ist nicht erreichbar. Bitte aufwecken und erneut suchen.',
+        );
+      } else {
+        _replace(null);
+        _state(
+          ConnectionPhase.idle,
+          devices.isEmpty
+              ? 'Keine Waage gefunden. Waage aktivieren und Sanitas-App schließen, dann erneut suchen.'
+              : 'Wähle deine Waage aus der Liste.',
+        );
+      }
+    });
+  }
 
-    deadline();
-    _link = _ble
-        .connectToDevice(
-          id: device.id,
-          connectionTimeout: const Duration(seconds: 12),
-          servicesWithCharacteristicsToDiscover: {
-            service: [characteristic],
-          },
-        )
+  void _openLink(_Session s) {
+    if (!_current(s)) return;
+    s.connecting = true;
+    s.protocol = SanitasProtocol(s.profile);
+    _state(
+      ConnectionPhase.connecting,
+      'Verbindung zur Waage wird aufgebaut (${s.attempt}/3) …',
+    );
+    // Fixed outer limit: junk or repeated notifications cannot keep setup alive.
+    s.deadline = Timer(
+      const Duration(seconds: 90),
+      () => _fail(
+        s,
+        'Der Abgleich dauert zu lange. Die Verbindung wird neu aufgebaut.',
+      ),
+    );
+    _progressDeadline(s);
+    s.link = _ble
+        .connect(s.device!.id)
         .listen(
           (update) {
-            if (generation != _generation) return;
-            if (update.connectionState == DeviceConnectionState.connected) {
+            if (!_current(s) || update.deviceId != s.device!.id) return;
+            _log('LINK ${update.connectionState.name} ${update.failure ?? ''}');
+            if (update.connectionState == DeviceConnectionState.connected &&
+                !s.connected) {
+              s.connected = true;
+              _progressDeadline(s);
               _state(
                 ConnectionPhase.synchronizing,
                 'Profil und gespeicherte Messungen werden abgeglichen …',
               );
-              _notifications = _ble
-                  .subscribeToCharacteristic(target)
-                  .listen(
-                    (bytes) {
-                      if (generation != _generation) return;
-                      _log('RX ${hexBytes(bytes)}');
-                      enqueue(() async {
-                        await events(protocol.receive(bytes));
-                        if (phase == ConnectionPhase.synchronizing) deadline();
-                      });
-                    },
-                    onError: (Object e) {
-                      if (generation == _generation) {
-                        unawaited(
-                          _fail(
-                            'Die Waage stellt den erwarteten SBF-70-Dienst nicht bereit. Bitte Diagnose exportieren.',
-                            e,
-                          ),
-                        );
-                      }
-                    },
-                  );
-              enqueue(() async {
-                // Let CCCD subscription finish before sending the proprietary handshake.
-                await Future<void>.delayed(const Duration(milliseconds: 600));
-                await events(protocol.start());
-              });
+              _enqueue(s, () => _subscribe(s));
             } else if (update.connectionState ==
                 DeviceConnectionState.disconnected) {
-              _timeout?.cancel();
-              unawaited(
-                disconnect(quiet: true).then((_) {
-                  if (phase != ConnectionPhase.error) {
-                    _state(
-                      ConnectionPhase.idle,
-                      'Waage getrennt. Zum nächsten Wiegen erneut verbinden.',
-                    );
-                  }
-                }),
-              );
+              _fail(s, 'Die Verbindung zur Waage wurde unterbrochen.');
             }
           },
-          onError: (Object e) {
-            if (generation == _generation) {
-              unawaited(
-                _fail(
-                  'Verbindung fehlgeschlagen. Waage aufwecken und erneut versuchen.',
-                  e,
-                ),
-              );
-            }
-          },
+          onError: (Object e) =>
+              _fail(s, 'Verbindung zur Waage fehlgeschlagen.', error: e),
+          onDone: () => _fail(s, 'Die Verbindung zur Waage wurde beendet.'),
         );
   }
 
-  Future<void> _fail(String text, [Object? error]) async {
-    if (error != null) _log('ERROR $error');
-    await disconnect(quiet: true);
-    _state(ConnectionPhase.error, text);
+  void _progressDeadline(_Session s) {
+    s.progressTimer?.cancel();
+    s.progressTimer = Timer(
+      const Duration(seconds: 15),
+      () => _fail(
+        s,
+        'Die Waage antwortet nicht. Bitte aufwecken und andere Waagen-Apps schließen.',
+      ),
+    );
+  }
+
+  Future<void> _subscribe(_Session s) async {
+    await _ble.validate(s.device!.id).timeout(const Duration(seconds: 8));
+    if (!_current(s)) return;
+    s.notifications = _ble
+        .notifications(s.device!.id)
+        .listen(
+          (bytes) {
+            if (!_current(s)) return;
+            final frame = List<int>.of(bytes);
+            final receivedAt = DateTime.now();
+            _log('RX ${hexBytes(frame)}');
+            _enqueue(s, () async {
+              final protocol = s.protocol!;
+              final before = protocol.progress;
+              final partial = protocol.hasPartialLive;
+              final events = protocol.receive(frame, receivedAt: receivedAt);
+              if (!protocol.hasPartialLive) {
+                s.measurement?.cancel();
+                s.measurement = null;
+              } else if (!partial) {
+                s.measurement = Timer(
+                  const Duration(seconds: 15),
+                  () => _fail(
+                    s,
+                    'Die Messung wurde nicht vollständig übertragen. Bitte Waage aufwecken.',
+                  ),
+                );
+              }
+              if (protocol.phase != 'init') s.handshake?.cancel();
+              await _events(s, events);
+              if (_current(s) &&
+                  phase == ConnectionPhase.synchronizing &&
+                  before != protocol.progress) {
+                _progressDeadline(s);
+              }
+            });
+          },
+          onError: (Object e) =>
+              _fail(s, 'Bluetooth-Datenübertragung unterbrochen.', error: e),
+          onDone: () =>
+              _fail(s, 'Die Waage sendet keine Bluetooth-Daten mehr.'),
+        );
+    // No CCCD-ready callback in the plugin. Allow setup time, then retry ONLY
+    // the idempotent handshake if its reply was lost, never profile writes.
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (!_current(s)) return;
+    await _events(s, s.protocol!.start());
+    if (!_current(s)) return;
+    var retries = 0;
+    s.handshake = Timer.periodic(const Duration(seconds: 3), (timer) {
+      if (!_current(s) || s.protocol!.phase != 'init' || retries >= 2) {
+        timer.cancel();
+        return;
+      }
+      retries++;
+      _enqueue(s, () async {
+        if (s.protocol!.phase == 'init') await _events(s, s.protocol!.start());
+      });
+    });
+  }
+
+  void _enqueue(_Session s, Future<void> Function() action) {
+    if (!_current(s)) return;
+    if (++s.pending > 256) {
+      _fail(
+        s,
+        'Die Waage sendet zu viele Daten auf einmal. Bitte erneut verbinden.',
+        retry: false,
+      );
+      return;
+    }
+    s.queue = s.queue.then((_) async {
+      try {
+        if (_current(s)) await action();
+      } on BluetoothUnavailable catch (e) {
+        _fail(s, e.message, retry: false);
+      } catch (e) {
+        _fail(s, 'Bluetooth-Übertragung fehlgeschlagen.', error: e);
+      } finally {
+        s.pending--;
+      }
+    });
+  }
+
+  Future<void> _persist(_Session s, Future<void> Function() action) async {
+    final operation = action();
+    // Profile edits wait for already accepted data to finish saving.
+    _persistence = operation.catchError((Object _) {});
+    try {
+      await operation;
+    } catch (e) {
+      _fail(
+        s,
+        'Daten konnten nicht gespeichert werden. Bitte erneut verbinden; der Waagenspeicher bleibt unverändert.',
+        error: e,
+        retry: false,
+      );
+    }
+  }
+
+  Future<void> _events(_Session s, List<ScaleEvent> events) async {
+    for (final event in events) {
+      if (!_current(s)) return;
+      switch (event) {
+        case SendFrame():
+          _log('TX ${hexBytes(event.bytes)}');
+          await _ble
+              .write(s.device!.id, event.bytes)
+              .timeout(const Duration(seconds: 6));
+        case ScaleMessage():
+          if (event.error) {
+            _fail(s, event.text, retry: event.retryable);
+            return;
+          }
+          message = event.text;
+          _notify();
+        case ScaleBound():
+          await _persist(
+            s,
+            () => onBound(
+              s.profile,
+              s.device!.id,
+              connectedName!,
+              event.remoteId,
+            ),
+          );
+          if (!_current(s)) return;
+          s.profile = s.profile.withDevice(
+            s.device!.id,
+            connectedName,
+            remote: event.remoteId,
+          );
+        case ScaleReady():
+          s.deadline?.cancel();
+          s.progressTimer?.cancel();
+          s.handshake?.cancel();
+          _state(ConnectionPhase.ready, 'Bereit. Steige barfuß auf die Waage.');
+        case ScaleBattery():
+          battery = event.percent;
+          _notify();
+        case ScaleLiveWeight():
+          liveWeight = event.kg;
+          _notify();
+        case ScaleReading():
+          var inserted = false;
+          await _persist(s, () async {
+            inserted = await onReading(event.measurement);
+          });
+          if (!_current(s)) return;
+          liveWeight = event.measurement.weight;
+          message = inserted
+              ? 'Messung gespeichert. Dein Verlauf ist aktuell.'
+              : 'Messung bereits verarbeitet. Dein Verlauf ist aktuell.';
+          _notify();
+      }
+    }
+  }
+
+  void _fail(_Session s, String text, {Object? error, bool retry = true}) {
+    if (!_current(s)) return;
+    _log('ATTEMPT ${s.attempt} $text ${error ?? ''}');
+    if (retry && s.device != null && s.attempt < 3 && !_background) {
+      final next = _Session(
+        s.profile,
+        device: s.device,
+        attempt: s.attempt + 1,
+      );
+      _replace(next);
+      liveWeight = null;
+      battery = null;
+      _state(
+        ConnectionPhase.retrying,
+        '$text Neuer Versuch ${next.attempt}/3 – bitte Waage kurz antippen.',
+      );
+      next.retry = Timer(Duration(seconds: s.attempt * 2), () {
+        if (_current(next)) unawaited(_start(next, requestPermission: false));
+      });
+    } else {
+      _replace(null);
+      liveWeight = null;
+      battery = null;
+      _state(
+        ConnectionPhase.error,
+        s.attempt >= 3 && retry
+            ? '$text Drei Versuche beendet. Bitte Waage aufwecken und erneut suchen.'
+            : text,
+      );
+    }
   }
 
   Future<void> disconnect({bool quiet = false}) async {
-    _generation++;
-    _timeout?.cancel();
-    _timeout = null;
-    final scan = _scan, link = _link, notifications = _notifications;
-    _scan = null;
-    _link = null;
-    _notifications = null;
-    await notifications?.cancel();
-    await scan?.cancel();
-    await link?.cancel();
-    if (!quiet) {
-      _state(ConnectionPhase.idle, 'Verbindung beendet.');
-    } else {
-      phase = ConnectionPhase.idle;
-    }
+    if (!quiet) _manuallyStopped = true;
+    _replace(null);
+    liveWeight = null;
+    battery = null;
+    _state(
+      ConnectionPhase.idle,
+      quiet ? 'Waage getrennt.' : 'Verbindung beendet.',
+    );
+    await _cleanup;
+    await _persistence;
+  }
+
+  Future<void> pause() async {
+    _background = true;
+    // A native permission dialog may temporarily pause the activity. Its result
+    // is consumed only if the app has resumed when prepare finishes.
+    if (_session?.preparing == true) return;
+    await disconnect(quiet: true);
+  }
+
+  void resume() {
+    _background = false;
   }
 
   @override
