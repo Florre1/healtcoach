@@ -39,7 +39,7 @@ unterdrückt, unvollständige Messungen verworfen. Körperwerte werden nur
 übernommen, soweit die Waage sie sendet. Android 8+, ARM32/ARM64/x86-64.
 
 Installation: signierte APK aus den [Releases](https://github.com/Florre1/healtcoach/releases)
-über die bestehende Installation installieren. Die neue Testversion trägt 1.3.2.
+über die bestehende Installation installieren. Die neue Testversion trägt 1.3.3.
 
 ## Daten und Sicherung
 

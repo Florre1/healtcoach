@@ -1,5 +1,14 @@
 # Prüfstand
 
+## Version 1.3.3
+
+- Diagnose an der echten SBF70 (1.3.2): Die leere Benutzerliste kommt als
+  `E7 F0 33 01 00 08` (Status 1, 0 von 8 Benutzern). 1.3.2 hielt Status 1 für
+  einen Fehler und blieb im Gewichtsmodus; die Messung lief als Gast
+  (Benutzer 0, Impedanz vorhanden, Körperwerte 0).
+- Leere Liste legt jetzt den HealthCoach-Platz an. Neue Tests mit den echten
+  Rohdaten.
+
 ## Version 1.3.2
 
 - Ursache „nur Gewicht“: Im reinen Empfangsmodus (1.3.0/1.3.1) kannte die Waage

@@ -284,7 +284,9 @@ class SanitasProtocol {
       return [if (b[4] <= 100) ScaleBattery(b[4]), command(0x33)];
     }
     if (cmd == 0x33 && phase == 'users' && b.length >= 6) {
-      if (b[3] != 0) {
+      // An empty scale answers with status 1 and count 0 (seen on a real
+      // SBF70: E7 F0 33 01 00 08). That is not an error: create the slot.
+      if (b[3] != 0 && b[4] != 0) {
         return _weightOnly('Benutzerliste der Waage nicht lesbar.');
       }
       capacity = b[5];

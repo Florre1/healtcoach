@@ -674,7 +674,7 @@ void main() {
       open(time);
       receive(time, sessionReplies[0]);
       receive(time, sessionReplies[1]);
-      receive(time, [0xe7, 0xf0, 0x33, 1, 0, 8]);
+      receive(time, [0xe7, 0xf0, 0x33, 1, 2, 8]);
       expect(scale.phase, ConnectionPhase.ready);
       expect(scale.bodyData, isFalse);
       expect(scale.message, startsWith('Verbunden, nur Gewicht'));

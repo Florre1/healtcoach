@@ -61,6 +61,15 @@ void main() {
       expect(out.whereType<ScaleReady>().single.bodyData, isTrue);
     },
   );
+  test('empty user list with status 1 (real SBF70) creates the slot', () {
+    p.start();
+    p.receive(sessionReplies[0]);
+    p.receive([0xe7, 0xf0, 0x4f, 1, 0x38, 0x14, 0x14, 1, 1, 1, 1, 5]);
+    final create = sent(p.receive([0xe7, 0xf0, 0x33, 1, 0, 8])).single;
+    expect(create.take(2), [0xe7, 0x31]);
+    expect(create.sublist(2, 10), idBytes(appSlotId));
+    expect(p.bodyData, isTrue);
+  });
   test('full scale falls back to weight-only reception', () {
     p.start();
     p.receive(sessionReplies[0]);
@@ -75,6 +84,13 @@ void main() {
     p.receive(header);
     p.receive(first);
     expect(p.receive(last).whereType<ScaleReading>(), hasLength(1));
+  });
+  test('unreadable non-empty user list falls back to weight-only', () {
+    p.start();
+    p.receive(sessionReplies[0]);
+    p.receive(sessionReplies[1]);
+    final ready = p.receive([0xe7, 0xf0, 0x33, 1, 2, 8]);
+    expect(ready.whereType<ScaleReady>().single.bodyData, isFalse);
   });
   test('rejected slot or measurement start falls back to weight-only', () {
     for (final reject in [
