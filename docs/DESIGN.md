@@ -38,5 +38,8 @@ in both appearances. Set `--dart-define=GLASS_PREVIEW=true` when running
 The Android integration test covers onboarding, manual decimal-comma entry,
 charts, measurement details, profile switching and persistence. The Windows
 emulator's Impeller screenshot path terminated the emulator; the integration
-test completed using software GLES with `--no-enable-impeller`. This emulator
-workaround does not change the production renderer configuration.
+test completed using software GLES with `--no-enable-impeller`. Starting the
+release with Impeller also terminated the emulator, so the Android manifest
+selects the validated hardware-accelerated Skia renderer for this release.
+Revisit this compatibility setting when upgrading Flutter or after confirming
+Impeller backdrop filters on the supported Android devices.

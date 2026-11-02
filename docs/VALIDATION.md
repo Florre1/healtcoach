@@ -10,13 +10,15 @@
 - Android-Integrationstest auf API 34 mit realen Formularen, manueller Messung,
   Diagrammen, Messdetails, Profiltrennung und Speicherung erfolgreich.
 - Gerenderte Ansichten visuell geprüft. Der Emulator benötigt für stabile
-  Screenshot-Erfassung Software-GLES und `--no-enable-impeller`; die produktive
-  Renderer-Konfiguration bleibt unverändert.
+  Screenshot-Erfassung Software-GLES und `--no-enable-impeller`. Auch der
+  Impeller-Release-Start beendete den Emulator; die Android-App wählt daher
+  für dieses Release den bereits getesteten Skia-Renderer.
 - Ein Test des neuen Designs auf dem Samsung A17 ist weiterhin erforderlich.
 - Release-APK 1.1.0 (Build 3) signiert, Signatur identisch mit 1.0.1 geprüft;
   ARM32, ARM64 und x86-64 enthalten, Android 8+.
-- Installation als Update über signierte Version 1.0.1 und Start der Release-App
-  im eigenen Emulator erfolgreich.
+- Installation als Update über signierte Version 1.0.1 erfolgreich.
+- Finale Release-APK mit Skia gestartet, Willkommensansicht per Android-
+  Screenshot geprüft; App und Emulator bleiben aktiv.
 
 ## Version 1.0.1
 

@@ -16,6 +16,10 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- Glass backdrop filters currently terminate the Windows API-34
+             emulator with Impeller. Use the validated hardware-accelerated
+             Skia renderer until the engine/device combination is revalidated. -->
+        <meta-data android:name="io.flutter.embedding.android.EnableImpeller" android:value="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
