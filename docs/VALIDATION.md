@@ -1,5 +1,17 @@
 # Prüfstand
 
+## Version 1.3.2
+
+- Ursache „nur Gewicht“: Im reinen Empfangsmodus (1.3.0/1.3.1) kannte die Waage
+  keinen Benutzer und berechnete deshalb keine Körperwerte.
+- Benutzerplatz und Messstart aus 1.2.0 übernommen, Historie lesen/löschen
+  entfällt. Fällt die Einrichtung aus, bleibt die Verbindung im Gewichtsmodus.
+- Neue Protokolltests: Anlegen und Aktualisieren des Platzes mit Profildaten,
+  Kürzelkonflikt, volle Waage, abgelehnter Messstart, keine Historienbefehle.
+- GitHub Actions: Format und Codeanalyse ohne Befunde, 58 Tests erfolgreich,
+  Debug-APK gebaut. Kein Hardwaretest, keine signierte Release-APK aus dieser Sitzung.
+- Test an der echten Waage offen, siehe [HARDWARE_TEST.md](HARDWARE_TEST.md).
+
 ## Version 1.3.1 – Körperwerte live
 
 - 53 automatisierte Tests erfolgreich, Codeanalyse ohne Befunde.

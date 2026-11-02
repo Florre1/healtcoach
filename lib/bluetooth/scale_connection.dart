@@ -68,6 +68,9 @@ class ScaleConnection extends ChangeNotifier {
   String? connectedName;
   int? battery;
   double? liveWeight;
+
+  /// False when the scale only reports weight (profile slot unavailable).
+  bool bodyData = true;
   final liveValues = <Metric, double>{};
   ReceptionPhase reception = ReceptionPhase.waiting;
   void _resetReception() {
@@ -137,6 +140,7 @@ class ScaleConnection extends ChangeNotifier {
     devices.clear();
     _resetReception();
     battery = null;
+    bodyData = true;
     connectedName = null;
     _state(ConnectionPhase.checking, 'Bluetooth wird vorbereitet …');
     await _start(s, requestPermission: !automatic, automatic: automatic);
@@ -153,6 +157,7 @@ class ScaleConnection extends ChangeNotifier {
     _replace(s);
     _resetReception();
     battery = null;
+    bodyData = true;
     connectedName = device.name.isEmpty ? 'Sanitas SBF 70' : device.name;
     _state(ConnectionPhase.connecting, 'Verbindung zur Waage wird aufgebaut …');
     await _start(s, requestPermission: true);
@@ -463,7 +468,7 @@ class ScaleConnection extends ChangeNotifier {
               s,
               event.bytes.first == 0xe6
                   ? 'Bluetooth-Anmeldung fehlgeschlagen. Waage aufwecken und Sanitas-App schließen.'
-                  : 'Empfangsbestätigung fehlgeschlagen. Bitte erneut verbinden.',
+                  : 'Befehl an die Waage fehlgeschlagen. Bitte erneut verbinden.',
               error: e,
             );
             return;
@@ -484,9 +489,12 @@ class ScaleConnection extends ChangeNotifier {
           s.deadline?.cancel();
           s.progressTimer?.cancel();
           s.handshake?.cancel();
+          bodyData = event.bodyData;
           _state(
             ConnectionPhase.ready,
-            'Verbunden. Jetzt an der Waage wiegen; warte auf Messwerte.',
+            event.bodyData
+                ? 'Bereit. Steige barfuß auf die Waage.'
+                : 'Verbunden, nur Gewicht: ${event.note ?? 'Körperwerte nicht verfügbar.'}',
           );
         case ScaleBattery():
           battery = event.percent;
@@ -573,6 +581,7 @@ class ScaleConnection extends ChangeNotifier {
     _replace(null);
     _resetReception();
     battery = null;
+    bodyData = true;
     _state(
       ConnectionPhase.idle,
       quiet ? 'Waage getrennt.' : 'Verbindung beendet.',

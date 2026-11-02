@@ -38,8 +38,30 @@ List<int> measurementPacket({
   return bytes;
 }
 
+/// Scale replies for a full session on an empty scale: login, status, empty
+/// user list, slot created, measurement started.
+const sessionReplies = <List<int>>[
+  [0xe6, 0, 0x20],
+  [0xe7, 0xf0, 0x4f, 0, 90, 20, 20, 1, 0, 0, 0, 1],
+  [0xe7, 0xf0, 0x33, 0, 0, 8],
+  [0xe7, 0xf0, 0x31, 0],
+  [0xe7, 0xf0, 0x40, 0],
+];
+
 void handshake(SanitasProtocol protocol) {
   protocol.start();
-  protocol.receive([0xe6, 0, 0x20]);
-  protocol.receive([0xe7, 0xf0, 0x4f, 0, 90, 20, 20, 1, 0, 0, 0, 1]);
+  for (final reply in sessionReplies) {
+    protocol.receive(reply);
+  }
 }
+
+/// One user-list notification (index of count) for a scale user.
+List<int> userFrame(int count, int index, String id, String initials) => [
+  0xe7,
+  0x34,
+  count,
+  index,
+  ...idBytes(id),
+  ...List.generate(3, (i) => i < initials.length ? initials.codeUnitAt(i) : 0),
+  95,
+];

@@ -124,7 +124,7 @@ class _ProfileFormState extends State<ProfileForm> {
                   ],
                   decoration: const InputDecoration(
                     labelText: 'Profilkürzel',
-                    helperText: '1–3 Zeichen, z. B. FLO. Bleibt ausschließlich auf deinem Handy.',
+                    helperText: '1–3 Zeichen, z. B. FLO. Erscheint auf dem Waagendisplay.',
                   ),
                   validator: (s) =>
                       s == null || !RegExp(r'^[a-zA-Z0-9]{1,3}$').hasMatch(s)
@@ -240,7 +240,7 @@ class _ProfileFormState extends State<ProfileForm> {
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  'Messungen landen im geöffneten App-Profil. Deine Profilangaben bleiben auf dem Handy.',
+                  'Messungen landen im geöffneten App-Profil. Größe, Alter, Geschlecht und Aktivität werden beim Verbinden in den HealthCoach-Platz der Waage geschrieben, damit sie Körperwerte berechnet. Andere Waagenprofile bleiben unverändert.',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12, height: 1.5),
                 ),

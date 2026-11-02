@@ -12,39 +12,34 @@ noch fehlende Werte zeigen „Warte …“. Nach Abschluss bedeutet „Nicht üb
 dass die Waage keinen gültigen Wert geliefert hat. Die Vorschau wird erst als
 vollständige Messung gespeichert. Teilpakete allein erzeugen keinen Eintrag.
 
-## Direkter Bluetooth-Empfang ab 1.3.0
+## Bluetooth-Ablauf ab 1.3.2
 
 1. Das gewünschte Profil in der App öffnen.
 2. Bluetooth einschalten und die Sanitas-App vollständig schließen.
 3. Waage aufwecken, „Waage suchen“ wählen und das Gerät antippen.
-4. Nach „Verbunden“ die Messung an der Waage starten und die App geöffnet lassen.
-5. Eine vollständig übertragene Live-Messung wird im geöffneten App-Profil gespeichert.
+4. Nach „Bereit“ barfuß auf die Waage steigen und die App geöffnet lassen.
+5. Die vollständige Messung wird im geöffneten App-Profil gespeichert.
 
-Die App sendet keine Profilangaben, fordert keine Benutzerliste oder alten
-Messungen an und erstellt, verändert oder löscht keine Waagenbenutzer.
-Ein freier Benutzerplatz wird nicht benötigt. Die Benutzerkennung eingehender
-Live-Pakete entscheidet nicht über deren Zuordnung. Gerätefreigaben und das
-Merken des Bluetooth-Geräts bleiben erforderlich.
+Die Waage berechnet Körperfett, Wasser, Muskeln, Knochen, BMR, AMR und BMI nur
+für einen ihr bekannten Benutzer. 1.3.0/1.3.1 haben diese Angaben nicht gesendet;
+deshalb kam nur das Gewicht an. Ab 1.3.2 schreibt die App beim Verbinden Größe,
+Geburtsdatum, Geschlecht und Aktivität des geöffneten Profils in einen eigenen
+HealthCoach-Benutzerplatz (beim ersten Mal wird er angelegt) und startet die
+Messung für diesen Platz.
 
-Die App sendet nur die Bluetooth-Protokollanmeldung und Empfangsbestätigungen.
-Die angezeigte Messzeit ist die Empfangszeit auf dem Handy. Doppelte Pakete werden
-lokal unterdrückt. Unvollständige Messungen werden verworfen; die Verbindung bleibt
-für den nächsten Versuch offen. Kurzzeitige Gewichtsanzeigen sind noch keine
-vollständige gespeicherte Messung.
+Gesendet werden: Anmeldung, Uhrzeit, Statusabfrage, Benutzerliste lesen,
+HealthCoach-Platz anlegen/aktualisieren, Messstart und Empfangsbestätigungen.
+Gespeicherte Messungen der Waage werden weder gelesen noch gelöscht; andere
+Waagenbenutzer werden nicht verändert. Lässt sich der Platz nicht einrichten
+(z. B. alle Plätze belegt), bleibt die Verbindung im reinen Gewichtsmodus und die
+App zeigt den Grund an.
 
-**Hardwareprüfung offen:** Das dokumentierte Protokoll startet eine Messung per
-App mit einer Waagen-Benutzerkennung. Dieser Befehl entfällt hier bewusst.
-Ob die konkrete Firmware nach Anmeldung und manuellem Wiegen vollständige
-Live-Pakete überträgt, muss an der echten Waage geprüft werden. „Verbunden“ bestätigt
-die Anmeldung, nicht die erfolgreiche Messwertübertragung. Wenn nur Gewicht oder
-keine Werte eintreffen: unter Profil die Bluetooth-Diagnose speichern.
-
-Profilangaben bleiben lokal. Körperanalysewerte werden nur übernommen, soweit die
-Waage sie sendet; die App errechnet keine fehlenden Körperwerte. Offline-Messungen
-werden nicht nachgeladen. Android 8+, ARM32/ARM64/x86-64.
+Die Messzeit ist die Empfangszeit auf dem Handy. Doppelte Pakete werden lokal
+unterdrückt, unvollständige Messungen verworfen. Körperwerte werden nur
+übernommen, soweit die Waage sie sendet. Android 8+, ARM32/ARM64/x86-64.
 
 Installation: signierte APK aus den [Releases](https://github.com/Florre1/healtcoach/releases)
-über die bestehende Installation installieren. Die neue Testversion trägt 1.3.1.
+über die bestehende Installation installieren. Die neue Testversion trägt 1.3.2.
 
 ## Daten und Sicherung
 

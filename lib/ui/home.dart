@@ -686,7 +686,7 @@ class _HomeState extends State<Home> {
                     ),
                     const SizedBox(height: 12),
                     const Text(
-                      '1. Bluetooth am Handy einschalten.\n2. Sanitas-App vollständig schließen.\n3. Waage kurz antippen und hier verbinden.\n4. Sobald verbunden: an der Waage wiegen.',
+                      '1. Bluetooth am Handy einschalten.\n2. Sanitas-App vollständig schließen.\n3. Waage kurz antippen und hier verbinden.\n4. Nach „Bereit“ barfuß aufsteigen.',
                       style: TextStyle(height: 1.7),
                     ),
                     const SizedBox(height: 18),
@@ -750,7 +750,7 @@ class _HomeState extends State<Home> {
                       ),
                     const SizedBox(height: 12),
                     const Text(
-                      'Messungen werden im aktuell geöffneten App-Profil gespeichert, unabhängig vom Waagenprofil. Starte die Messung an der Waage. Die App empfängt ausschließlich neue Live-Messungen.',
+                      'Messungen werden im aktuell geöffneten App-Profil gespeichert. HealthCoach nutzt einen eigenen Benutzerplatz auf der Waage; Körperwerte gibt es nur barfuß. Gespeicherte Messungen der Waage werden nicht importiert.',
                       style: TextStyle(fontSize: 12, height: 1.5),
                     ),
                   ],

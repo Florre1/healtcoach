@@ -26,11 +26,22 @@ class ScaleBattery extends ScaleEvent {
   ScaleBattery(this.percent);
 }
 
-class ScaleReady extends ScaleEvent {}
+/// [bodyData] is false when the scale could not be given the profile data it
+/// needs for body composition; then only weight is reported.
+class ScaleReady extends ScaleEvent {
+  final bool bodyData;
+  final String? note;
+  ScaleReady({this.bodyData = true, this.note});
+}
 
 class ScaleReading extends ScaleEvent {
   final Measurement measurement;
   ScaleReading(this.measurement);
+}
+
+class RemoteUser {
+  final String id, initials;
+  RemoteUser(this.id, this.initials);
 }
 
 class ScaleLiveWeight extends ScaleEvent {
@@ -52,23 +63,37 @@ List<int> idBytes(String id) => List.generate(
   (i) => int.parse(id.substring(i * 2, i * 2 + 2), radix: 16),
 );
 
+/// Fixed user slot that HealthCoach owns on the scale. All app profiles share
+/// it: on each connect the active profile's body data is written into it so
+/// the scale can compute fat, water, muscle, bone, BMR and AMR. Other users on
+/// the scale (e.g. from the Sanitas app) are never compared, changed or deleted.
+const appSlotId = '4843000000000001';
+
 int u16(List<int> b, int offset) => (b[offset] << 8) | b[offset + 1];
 List<int> timeBytes(DateTime date) => (ByteData(
   4,
 )..setUint32(0, date.millisecondsSinceEpoch ~/ 1000)).buffer.asUint8List();
 
-/// Receive-only session: no scale users, history, or measurement-start commands.
-/// The user starts the measurement on the scale itself.
+/// Session: login, write the active profile into the HealthCoach slot, start
+/// the measurement for that slot, then receive. The scale's stored history is
+/// never read or deleted. If the slot cannot be prepared, the session falls
+/// back to receive-only (weight without body composition).
 class SanitasProtocol {
   final Profile profile;
   final DateTime Function() now;
+  final users = <RemoteUser>[];
   String phase = 'init';
+  bool bodyData = true;
+  int capacity = 8;
+  int? _userCount;
+  String _slotInitials = '';
   List<int>? _livePart;
   DateTime? _liveStarted;
+  final _userFrames = <int, String>{};
   final _liveFrames = <int, String>{};
   final _seen = <String>{};
   bool get hasPartialLive => _liveStarted != null;
-  String get progress => phase;
+  String get progress => '$phase:$_userCount:${users.length}';
   SanitasProtocol(this.profile, {DateTime Function()? clock})
     : now = clock ?? DateTime.now;
   List<ScaleEvent> start() => [
@@ -77,6 +102,19 @@ class SanitasProtocol {
   SendFrame command(int cmd, [List<int> payload = const []]) =>
       SendFrame([0xe7, cmd, ...payload]);
   SendFrame ack(List<int> b) => command(0xf1, b.sublist(1, 4));
+  List<int> get _uid => idBytes(appSlotId);
+  List<int> get _details => [
+    ...List.generate(
+      3,
+      (i) => i < _slotInitials.length ? _slotInitials.codeUnitAt(i) : 0,
+    ),
+    profile.birthday.year - 1900,
+    profile.birthday.month - 1,
+    profile.birthday.day,
+    profile.heightCm,
+    (profile.sex == 'male' ? 0x80 : 0) | profile.activity,
+  ];
+
   List<ScaleEvent> discardPartial() {
     _clearLive();
     return [
@@ -84,6 +122,64 @@ class SanitasProtocol {
       ScaleMessage(
         'Messung unvollständig. Bitte erneut auf die Waage steigen.',
       ),
+    ];
+  }
+
+  List<ScaleEvent> _fail(String message, {bool retryable = false}) {
+    phase = 'error';
+    return [ScaleMessage(message, error: true, retryable: retryable)];
+  }
+
+  /// Keep the connection usable for weight when the scale refuses the slot.
+  List<ScaleEvent> _weightOnly(String reason) {
+    phase = 'ready';
+    bodyData = false;
+    return [ScaleReady(bodyData: false, note: reason)];
+  }
+
+  List<ScaleEvent> _startMeasurement() {
+    phase = 'starting';
+    return [command(0x40, _uid)];
+  }
+
+  /// Initials must be unique on the scale. Prefer the profile's own, fall back
+  /// to HC/HC1… when another scale user already shows the same letters.
+  String? _freeInitials() {
+    final taken = users
+        .where((u) => u.id != appSlotId)
+        .map((u) => u.initials.toUpperCase())
+        .toSet();
+    for (final candidate in [
+      profile.initials.toUpperCase(),
+      'HC',
+      for (var i = 1; i <= 9; i++) 'HC$i',
+    ]) {
+      if (!taken.contains(candidate)) return candidate;
+    }
+    return null;
+  }
+
+  List<ScaleEvent> _selectUser() {
+    final initials = _freeInitials();
+    if (initials == null) {
+      return _weightOnly('Kein freies Kürzel auf der Waage.');
+    }
+    _slotInitials = initials;
+    if (users.any((u) => u.id == appSlotId)) {
+      phase = 'update';
+      return [
+        command(0x35, [..._uid, ..._details]),
+      ];
+    }
+    if (users.length >= capacity) {
+      return _weightOnly(
+        'Alle Benutzerplätze der Waage sind belegt. Lösche in der Sanitas-App einen Benutzer, um Körperwerte zu erhalten.',
+      );
+    }
+    phase = 'create';
+    return [
+      ScaleMessage('Die Waage wird für HealthCoach eingerichtet.'),
+      command(0x31, [..._uid, ..._details]),
     ];
   }
 
@@ -97,13 +193,46 @@ class SanitasProtocol {
           ScaleMessage('Die Waage hat die Anmeldung abgelehnt.', error: true),
         ];
       }
-      phase = 'ready';
-      return [ScaleReady()];
+      phase = 'status';
+      return [
+        SendFrame([0xe9, ...timeBytes(now())]),
+        command(0x4f, List.filled(8, 0)),
+      ];
     }
-    if (b.length < 2 || b[0] != 0xe7 || phase != 'ready') return [];
+    if (b.length < 2 || b[0] != 0xe7) return [];
     switch (b[1]) {
+      case 0xf0:
+        if (b.length < 4) return [];
+        return _response(b);
+      case 0x34:
+        if (b.length != 16) return [];
+        final count = b[2], index = b[3];
+        final key = hexBytes(b);
+        if (_userFrames[index] == key) return [ack(b)];
+        if (phase != 'users') return [];
+        if (index < 1 ||
+            index > count ||
+            count > capacity ||
+            (_userCount != null && count != _userCount) ||
+            index != users.length + 1) {
+          return _fail(
+            'Benutzerliste unvollständig oder widersprüchlich. Bitte erneut verbinden.',
+            retryable: true,
+          );
+        }
+        _userCount = count;
+        _userFrames[index] = key;
+        final result = <ScaleEvent>[ack(b)];
+        users.add(
+          RemoteUser(
+            hexBytes(b.sublist(4, 12)),
+            String.fromCharCodes(b.sublist(12, 15).takeWhile((x) => x != 0)),
+          ),
+        );
+        if (users.length == count) result.addAll(_selectUser());
+        return result;
       case 0x58:
-        if (b.length != 5) return [];
+        if (b.length != 5 || phase != 'ready') return [];
         final kg = u16(b, 3) * .05;
         return [ack(b), if (kg > 0 && kg <= 180) ScaleLiveWeight(kg)];
       case 0x59:
@@ -145,6 +274,57 @@ class SanitasProtocol {
       default:
         return [];
     }
+  }
+
+  List<ScaleEvent> _response(List<int> b) {
+    final cmd = b[2];
+    if (cmd == 0x4f && phase == 'status' && b.length >= 12) {
+      phase = 'users';
+      // Reading is in kg regardless of the display unit. Leave scale settings intact.
+      return [if (b[4] <= 100) ScaleBattery(b[4]), command(0x33)];
+    }
+    if (cmd == 0x33 && phase == 'users' && b.length >= 6) {
+      if (b[3] != 0) {
+        return _weightOnly('Benutzerliste der Waage nicht lesbar.');
+      }
+      capacity = b[5];
+      if (capacity < 1 ||
+          capacity > 8 ||
+          b[4] > capacity ||
+          (_userCount != null && _userCount != b[4])) {
+        return _fail(
+          'Ungültige Benutzeranzahl von der Waage.',
+          retryable: true,
+        );
+      }
+      _userCount = b[4];
+      if (b[4] == 0) return _selectUser();
+      return [];
+    }
+    if (cmd == 0x35 && phase == 'update') {
+      if (b[3] != 0) {
+        return _weightOnly('Waagenprofil konnte nicht aktualisiert werden.');
+      }
+      return _startMeasurement();
+    }
+    if (cmd == 0x31 && phase == 'create') {
+      if (b[3] != 0) {
+        return _weightOnly(switch (b[3]) {
+          1 => 'Die Waage hat keinen freien Benutzerplatz.',
+          3 => 'Kürzel auf der Waage bereits belegt.',
+          _ => 'Waagenprofil konnte nicht angelegt werden.',
+        });
+      }
+      return _startMeasurement();
+    }
+    if (cmd == 0x40 && phase == 'starting') {
+      if (b[3] != 0) {
+        return _weightOnly('Die Waage hat den Messstart abgelehnt.');
+      }
+      phase = 'ready';
+      return [ScaleReady()];
+    }
+    return [];
   }
 
   void _clearLive() {

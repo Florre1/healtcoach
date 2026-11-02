@@ -134,7 +134,9 @@ void main() {
   }
 
   void ready(FakeAsync time) {
-    receive(time, [0xe6, 0, 0x20]);
+    for (final reply in sessionReplies) {
+      receive(time, reply);
+    }
     expect(scale.phase, ConnectionPhase.ready);
   }
 
@@ -636,9 +638,9 @@ void main() {
       final bound = Completer<void>();
       setup(bind: (_, _, _) => bound.future);
       open(time);
-      receive(time, [0xe6, 0, 0x20]);
-      receive(time, [0xe7, 0xf0, 0x4f, 0, 90, 20, 20, 1, 0, 0, 0, 1]);
-      receive(time, [0xe7, 0xf0, 0x33, 0, 1, 8]);
+      for (final reply in sessionReplies) {
+        receive(time, reply);
+      }
       var disconnected = false;
       unawaited(
         scale.disconnect(quiet: true).then((_) {
@@ -652,6 +654,30 @@ void main() {
       expect(disconnected, isTrue);
       expect(ble.writes.any((b) => b.length > 1 && b[1] == 0x41), isFalse);
       expect(scale.phase, ConnectionPhase.idle);
+      finish(time);
+    }),
+  );
+  test(
+    'ready message distinguishes body data from weight-only mode',
+    () => fakeAsync((time) {
+      setup();
+      open(time);
+      ready(time);
+      expect(scale.bodyData, isTrue);
+      expect(scale.message, 'Bereit. Steige barfuß auf die Waage.');
+      expect(
+        ble.writes.where((b) => b.length > 1 && b[1] == 0x40),
+        hasLength(1),
+      );
+      unawaited(scale.disconnect());
+      time.flushMicrotasks();
+      open(time);
+      receive(time, sessionReplies[0]);
+      receive(time, sessionReplies[1]);
+      receive(time, [0xe7, 0xf0, 0x33, 1, 0, 8]);
+      expect(scale.phase, ConnectionPhase.ready);
+      expect(scale.bodyData, isFalse);
+      expect(scale.message, startsWith('Verbunden, nur Gewicht'));
       finish(time);
     }),
   );
