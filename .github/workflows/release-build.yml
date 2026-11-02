@@ -1,10 +1,12 @@
 name: Release build (unsigned)
 # Builds an unsigned release APK. Signing happens afterwards with the personal
 # key, which never leaves the owner's control and is not stored on GitHub.
+# The unsigned APK is attached to a draft release; it is replaced by the
+# signed APK before the release is published.
 on:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -25,7 +27,13 @@ jobs:
       - run: flutter pub get
       - run: flutter test
       - run: flutter build apk --release
-      - uses: actions/upload-artifact@v4
-        with:
-          name: healthcoach-release-unsigned
-          path: build/app/outputs/flutter-apk/app-release.apk
+      - name: Attach unsigned APK to draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(grep '^version:' pubspec.yaml | sed 's/version: //; s/+.*//')
+          tag="v$version"
+          cp build/app/outputs/flutter-apk/app-release.apk "healthcoach-$version-unsigned.apk"
+          gh release view "$tag" >/dev/null 2>&1 || \
+            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "HealthCoach $version" --notes "Entwurf"
+          gh release upload "$tag" "healthcoach-$version-unsigned.apk" --clobber
