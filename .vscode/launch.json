@@ -1,0 +1,7 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {"name": "HealthCoach · Android", "request": "launch", "type": "dart", "program": "lib/main.dart"},
+    {"name": "HealthCoach · Release", "request": "launch", "type": "dart", "flutterMode": "release", "program": "lib/main.dart"}
+  ]
+}

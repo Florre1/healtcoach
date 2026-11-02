@@ -1,0 +1,8 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {"label": "App prüfen", "type": "shell", "command": "flutter analyze", "problemMatcher": []},
+    {"label": "Tests", "type": "shell", "command": "flutter test", "group": "test", "problemMatcher": []},
+    {"label": "Android APK bauen", "type": "shell", "command": "flutter build apk --release", "group": "build", "problemMatcher": []}
+  ]
+}
