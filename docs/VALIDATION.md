@@ -1,5 +1,16 @@
 # Prüfstand
 
+## Version 1.3.1 – Körperwerte live
+
+- 53 automatisierte Tests erfolgreich, Codeanalyse ohne Befunde.
+- Paketweiser Empfang zeigt nur vollständig übertragene Werte. Der über zwei
+  Pakete verteilte Wasserwert erscheint erst mit dem letzten Paket.
+- Transporttests bestätigen Speicherung aller neun Werte im aktiven Profil,
+  Vorschau vor Speicherung, Zurücksetzen bei neuer Messung und Verbindungsende
+  sowie Verwerfen einer unvollständigen Messung nach Zeitüberschreitung.
+- Oberfläche bei 360 dp und 130% Schriftgröße in Hell und Dunkel geprüft.
+- Die echte SBF70-Übertragung und Körperwert-Byteinterpretation bleiben hardwareseitig zu prüfen.
+
 ## Version 1.3.0 – direkter Empfang
 
 - 49 automatisierte Tests erfolgreich; Tests des entfernten Benutzer-/Historienabgleichs durch Empfangstests ersetzt.

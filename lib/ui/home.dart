@@ -13,6 +13,7 @@ import '../version.dart';
 import '../domain/models.dart';
 import '../bluetooth/scale_connection.dart';
 import 'forms.dart';
+import 'live_measurement_panel.dart';
 import 'widgets.dart';
 import 'theme.dart';
 
@@ -695,13 +696,12 @@ class _HomeState extends State<Home> {
                         style: const TextStyle(height: 1.5),
                       ),
                     ),
-                    if (s.liveWeight != null)
+                    if (s.phase == ConnectionPhase.ready)
                       Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: Text(
-                          '${number(s.liveWeight!, 2)} kg',
-                          style: Theme.of(context).textTheme.headlineLarge,
-                          textAlign: TextAlign.center,
+                        padding: const EdgeInsets.only(top: 16),
+                        child: LiveMeasurementPanel(
+                          values: s.liveValues,
+                          reception: s.reception,
                         ),
                       ),
                     const SizedBox(height: 16),

@@ -150,6 +150,67 @@ void main() {
   }
 
   test(
+    'body preview follows packets and all nine values are saved together',
+    () => fakeAsync((time) {
+      final saved = Completer<bool>();
+      Measurement? stored;
+      setup(
+        save: (m) {
+          stored = m;
+          return saved.future;
+        },
+      );
+      open(time);
+      ready(time);
+      receive(time, [0xe7, 0x58, 1, 6, 64]);
+      expect(scale.liveValues, {Metric.weight: 80});
+      receive(time, [0xe7, 0x59, 3, 1, 1, ...idBytes('0000000000000099')]);
+      expect(scale.liveValues, isEmpty);
+      receive(time, [0xe7, 0x59, 3, 2, ...measurementPacket().take(11)]);
+      expect(scale.liveValues.keys.toSet(), {
+        Metric.weight,
+        Metric.fat,
+        Metric.impedance,
+      });
+      expect(scale.liveValues[Metric.fat], 21.5);
+      expect(scale.liveValues.containsKey(Metric.water), isFalse);
+      expect(stored, isNull);
+      receive(time, [0xe7, 0x59, 3, 3, ...measurementPacket().skip(11)]);
+      expect(scale.liveValues.keys.toSet(), Metric.values.toSet());
+      expect(scale.liveValues[Metric.water], 57.2);
+      expect(scale.liveValues[Metric.amr], 2670);
+      expect(stored!.values, scale.liveValues);
+      expect(stored!.profileId, testProfile().id);
+      expect(scale.reception, ReceptionPhase.saving);
+      saved.complete(true);
+      time.flushMicrotasks();
+      expect(scale.reception, ReceptionPhase.saved);
+      receive(time, [0xe7, 0x58, 1, 6, 65]);
+      expect(scale.liveValues.keys, [Metric.weight]);
+      unawaited(scale.disconnect());
+      time.flushMicrotasks();
+      expect(scale.liveValues, isEmpty);
+      finish(time);
+    }),
+  );
+  test(
+    'timed out body preview is cleared and never persisted',
+    () => fakeAsync((time) {
+      setup();
+      open(time);
+      ready(time);
+      receive(time, [0xe7, 0x59, 3, 1, 1, ...idBytes('0000000000000099')]);
+      receive(time, [0xe7, 0x59, 3, 2, ...measurementPacket().take(11)]);
+      expect(scale.liveValues, isNotEmpty);
+      time.elapse(const Duration(seconds: 15));
+      expect(scale.liveValues, isEmpty);
+      expect(scale.reception, ReceptionPhase.discarded);
+      expect(readings, isEmpty);
+      expect(scale.phase, ConnectionPhase.ready);
+      finish(time);
+    }),
+  );
+  test(
     'permission dialog pause/resume keeps the original search',
     () => fakeAsync((time) {
       setup();

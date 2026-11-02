@@ -38,6 +38,13 @@ class ScaleLiveWeight extends ScaleEvent {
   ScaleLiveWeight(this.kg);
 }
 
+/// Preview only. Persistence waits for the complete, validated reading.
+class ScaleTransfer extends ScaleEvent {
+  final int packet;
+  final Map<Metric, double> values;
+  ScaleTransfer(this.packet, this.values);
+}
+
 String hexBytes(List<int> bytes) =>
     bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 List<int> idBytes(String id) => List.generate(
@@ -73,6 +80,7 @@ class SanitasProtocol {
   List<ScaleEvent> discardPartial() {
     _clearLive();
     return [
+      ScaleTransfer(0, const {}),
       ScaleMessage(
         'Messung unvollständig. Bitte erneut auf die Waage steigen.',
       ),
@@ -115,9 +123,11 @@ class SanitasProtocol {
           _clearLive();
           _liveStarted = time;
           _liveFrames[1] = key;
+          out.add(ScaleTransfer(1, const {}));
         } else if (b[3] == 2 && b.length == 15 && _liveFrames.length == 1) {
           _livePart = b.sublist(4);
           _liveFrames[2] = key;
+          out.add(ScaleTransfer(2, decodeBodyValues(_livePart!)));
         } else if (b[3] == 3 &&
             b.length == 15 &&
             _livePart != null &&
@@ -129,12 +139,7 @@ class SanitasProtocol {
           // ACK a repeated final packet, but never combine it with old data.
           _liveFrames[3] = key;
         } else {
-          _clearLive();
-          out.add(
-            ScaleMessage(
-              'Unvollständige Messung verworfen. Bitte erneut wiegen.',
-            ),
-          );
+          out.addAll(discardPartial());
         }
         return out;
       default:
@@ -151,12 +156,34 @@ class SanitasProtocol {
   List<ScaleEvent> _decode(List<int> bytes) {
     try {
       final m = decodeMeasurement(bytes, profile, now: now(), live: true);
-      if (!_seen.add(m.id)) return [];
-      return [ScaleReading(m)];
+      return [ScaleTransfer(3, m.values), if (_seen.add(m.id)) ScaleReading(m)];
     } on FormatException catch (e) {
-      return [ScaleMessage(e.message)];
+      return [ScaleTransfer(0, const {}), ScaleMessage(e.message)];
     }
   }
+}
+
+/// Decode only fields whose two bytes have arrived. Water straddles packets.
+Map<Metric, double> decodeBodyValues(List<int> b) {
+  final values = <Metric, double>{};
+  final fields = <Metric, (int, double)>{
+    Metric.weight: (4, 20),
+    Metric.impedance: (6, 1),
+    Metric.fat: (8, 10),
+    Metric.water: (10, 10),
+    Metric.muscle: (12, 10),
+    Metric.bone: (14, 20),
+    Metric.bmr: (16, 1),
+    Metric.amr: (18, 1),
+    Metric.bmi: (20, 10),
+  };
+  for (final entry in fields.entries) {
+    final (offset, divisor) = entry.value;
+    if (b.length < offset + 2) continue;
+    final value = u16(b, offset) / divisor;
+    if (value > 0 && value <= entry.key.max) values[entry.key] = value;
+  }
+  return values;
 }
 
 Measurement decodeMeasurement(
@@ -177,22 +204,9 @@ Measurement decodeMeasurement(
       'Die Uhrzeit der Waage ist ungültig. Bitte erneut verbinden und neu wiegen.',
     );
   }
-  final values = <Metric, double>{Metric.weight: u16(b, 4) * .05};
-  if (values[Metric.weight]! <= 0 || values[Metric.weight]! > 180) {
+  final values = decodeBodyValues(b);
+  if (!values.containsKey(Metric.weight)) {
     throw const FormatException('Ungültiges Gewicht verworfen.');
-  }
-  final candidates = {
-    Metric.impedance: u16(b, 6).toDouble(),
-    Metric.fat: u16(b, 8) / 10,
-    Metric.water: u16(b, 10) / 10,
-    Metric.muscle: u16(b, 12) / 10,
-    Metric.bone: u16(b, 14) * .05,
-    Metric.bmr: u16(b, 16).toDouble(),
-    Metric.amr: u16(b, 18).toDouble(),
-    Metric.bmi: u16(b, 20) / 10,
-  };
-  for (final e in candidates.entries) {
-    if (e.value > 0 && e.value <= e.key.max) values[e.key] = e.value;
   }
   return Measurement(
     // Received live packets belong to the active local profile.

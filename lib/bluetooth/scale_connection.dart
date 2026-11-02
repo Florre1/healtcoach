@@ -18,6 +18,17 @@ enum ConnectionPhase {
   error,
 }
 
+enum ReceptionPhase {
+  waiting,
+  weighing,
+  receiving,
+  received,
+  saving,
+  saved,
+  duplicate,
+  discarded,
+}
+
 /// Each attempt owns its streams, timers and queue. Old callbacks cannot update
 /// the UI, write to a new GATT link, or schedule another retry.
 class _Session {
@@ -57,6 +68,14 @@ class ScaleConnection extends ChangeNotifier {
   String? connectedName;
   int? battery;
   double? liveWeight;
+  final liveValues = <Metric, double>{};
+  ReceptionPhase reception = ReceptionPhase.waiting;
+  void _resetReception() {
+    liveWeight = null;
+    liveValues.clear();
+    reception = ReceptionPhase.waiting;
+  }
+
   final devices = <String, DiscoveredDevice>{};
   final List<String> diagnosticLog = [];
   _Session? _session;
@@ -116,7 +135,7 @@ class ScaleConnection extends ChangeNotifier {
     final s = _Session(profile);
     _replace(s);
     devices.clear();
-    liveWeight = null;
+    _resetReception();
     battery = null;
     connectedName = null;
     _state(ConnectionPhase.checking, 'Bluetooth wird vorbereitet …');
@@ -132,7 +151,7 @@ class ScaleConnection extends ChangeNotifier {
     _manuallyStopped = false;
     final s = _Session(profile, device: device);
     _replace(s);
-    liveWeight = null;
+    _resetReception();
     battery = null;
     connectedName = device.name.isEmpty ? 'Sanitas SBF 70' : device.name;
     _state(ConnectionPhase.connecting, 'Verbindung zur Waage wird aufgebaut …');
@@ -472,15 +491,42 @@ class ScaleConnection extends ChangeNotifier {
         case ScaleBattery():
           battery = event.percent;
           _notify();
+        case ScaleTransfer():
+          liveValues
+            ..clear()
+            ..addAll(event.values);
+          liveWeight = liveValues[Metric.weight];
+          reception = event.packet == 0
+              ? ReceptionPhase.discarded
+              : event.packet == 3
+              ? ReceptionPhase.received
+              : ReceptionPhase.receiving;
+          _notify();
         case ScaleLiveWeight():
+          if (reception != ReceptionPhase.weighing &&
+              reception != ReceptionPhase.receiving) {
+            _resetReception();
+          }
+          if (reception != ReceptionPhase.receiving) {
+            reception = ReceptionPhase.weighing;
+          }
+          liveValues[Metric.weight] = event.kg;
           liveWeight = event.kg;
           _notify();
         case ScaleReading():
+          liveValues
+            ..clear()
+            ..addAll(event.measurement.values);
+          reception = ReceptionPhase.saving;
+          _notify();
           var inserted = false;
           await _persist(s, () async {
             inserted = await onReading(event.measurement);
           });
           if (!_current(s)) return;
+          reception = inserted
+              ? ReceptionPhase.saved
+              : ReceptionPhase.duplicate;
           liveWeight = event.measurement.weight;
           message = inserted
               ? 'Messung gespeichert. Dein Verlauf ist aktuell.'
@@ -500,7 +546,7 @@ class ScaleConnection extends ChangeNotifier {
         attempt: s.attempt + 1,
       );
       _replace(next);
-      liveWeight = null;
+      _resetReception();
       battery = null;
       _state(
         ConnectionPhase.retrying,
@@ -511,7 +557,7 @@ class ScaleConnection extends ChangeNotifier {
       });
     } else {
       _replace(null);
-      liveWeight = null;
+      _resetReception();
       battery = null;
       _state(
         ConnectionPhase.error,
@@ -525,7 +571,7 @@ class ScaleConnection extends ChangeNotifier {
   Future<void> disconnect({bool quiet = false}) async {
     if (!quiet) _manuallyStopped = true;
     _replace(null);
-    liveWeight = null;
+    _resetReception();
     battery = null;
     _state(
       ConnectionPhase.idle,

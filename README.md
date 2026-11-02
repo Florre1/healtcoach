@@ -3,6 +3,15 @@
 Lokale Android-App für die Sanitas SBF 70 / SBF 70 S-A, mit Profilen,
 Gewichtsverlauf, Körperwerten, manuellen Einträgen und JSON-/CSV-Export.
 
+## Live-Anzeige ab 1.3.1
+
+Im Verbindungsfenster zeigt „Live-Empfang“ alle neun Werte mit ihrem tatsächlichen
+Empfangsstand: Gewicht, BMI, Körperfett, Wasser, Muskeln, Knochenmasse, Grundumsatz,
+Aktivitätsumsatz und Impedanz. Vollständig eingetroffene Werte erscheinen sofort;
+noch fehlende Werte zeigen „Warte …“. Nach Abschluss bedeutet „Nicht übertragen“,
+dass die Waage keinen gültigen Wert geliefert hat. Die Vorschau wird erst als
+vollständige Messung gespeichert. Teilpakete allein erzeugen keinen Eintrag.
+
 ## Direkter Bluetooth-Empfang ab 1.3.0
 
 1. Das gewünschte Profil in der App öffnen.
@@ -35,7 +44,7 @@ Waage sie sendet; die App errechnet keine fehlenden Körperwerte. Offline-Messun
 werden nicht nachgeladen. Android 8+, ARM32/ARM64/x86-64.
 
 Installation: signierte APK aus den [Releases](https://github.com/Florre1/healtcoach/releases)
-über die bestehende Installation installieren. Die neue Testversion trägt 1.3.0.
+über die bestehende Installation installieren. Die neue Testversion trägt 1.3.1.
 
 ## Daten und Sicherung
 
