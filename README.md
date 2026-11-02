@@ -1,83 +1,41 @@
 # HealthCoach
 
-Eine persönliche, lokale Android-App für die **Sanitas SBF 70 / SBF 70 S-A**.
-Flutter-Oberfläche im Glass-Design auf Deutsch, direkte Bluetooth-LE-Verbindung, Zielgewicht und
-Verläufe für Gewicht und Körperanalyse. Entwickelt für VS Code.
+Lokale Android-App für die Sanitas SBF 70 / SBF 70 S-A, mit Profilen,
+Gewichtsverlauf, Körperwerten, manuellen Einträgen und JSON-/CSV-Export.
 
-<p>
-  <img src="docs/screenshots/dashboard.png" width="280" alt="Tagesübersicht mit synthetischen Testdaten" />
-  <img src="docs/screenshots/trends.png" width="280" alt="Gewichtsverlauf mit synthetischen Testdaten" />
-</p>
+## Direkter Bluetooth-Empfang ab 1.3.0
 
-*Ansichten aus dem Android-Emulator, ausschließlich synthetische Testdaten.*
+1. Das gewünschte Profil in der App öffnen.
+2. Bluetooth einschalten und die Sanitas-App vollständig schließen.
+3. Waage aufwecken, „Waage suchen“ wählen und das Gerät antippen.
+4. Nach „Verbunden“ die Messung an der Waage starten und die App geöffnet lassen.
+5. Eine vollständig übertragene Live-Messung wird im geöffneten App-Profil gespeichert.
 
-## Funktionen
+Die App sendet keine Profilangaben, fordert keine Benutzerliste oder alten
+Messungen an und erstellt, verändert oder löscht keine Waagenbenutzer.
+Ein freier Benutzerplatz wird nicht benötigt. Die Benutzerkennung eingehender
+Live-Pakete entscheidet nicht über deren Zuordnung. Gerätefreigaben und das
+Merken des Bluetooth-Geräts bleiben erforderlich.
 
-- Profile mit individuellen Zielen und getrennten Messungen. Jede Messung wird
-  dem Profil gespeichert, das gerade in der App geöffnet ist.
-- Tagesübersicht, Zielabstand und Gewichtsdiagramm.
-- Diagramme für Gewicht, BMI, Körperfett, Körperwasser, Muskeln, Knochenmasse,
-  BMR (Grundumsatz), AMR (Aktivitätsumsatz) und elektrische Impedanz.
-- 7/30/90 Tage oder gesamter Verlauf; letzter verfügbarer Wert je Kalendertag.
-- Bluetooth-Suche, eigener HealthCoach-Benutzerplatz auf der Waage, Uhrzeitsynchronisierung,
-  Live-Anzeige und Abruf gespeicherter Messungen seit Einrichtung des App-Profils.
-- Wiederverbindung beim Öffnen der App (abschaltbar). Keine Hintergrundsuche.
-- Manuelle Messungen, optionale Körperwerte und Notizen, Löschung mit Bestätigung.
-- SQLite auf dem Handy, JSON-Sicherung/Wiederherstellung, CSV-Export.
-- Hell-/Dunkelmodus, Bluetooth-Diagnoseexport, eigene Android-App-Identität.
-- Glass-Flächen, schwebende Tab-Leiste, Zielring und nach Monaten gruppierte
-  Messungen. Inter-Schrift lokal eingebettet; keine Schrift-Downloads zur Laufzeit.
+Die App sendet nur die Bluetooth-Protokollanmeldung und Empfangsbestätigungen.
+Die angezeigte Messzeit ist die Empfangszeit auf dem Handy. Doppelte Pakete werden
+lokal unterdrückt. Unvollständige Messungen werden verworfen; die Verbindung bleibt
+für den nächsten Versuch offen. Kurzzeitige Gewichtsanzeigen sind noch keine
+vollständige gespeicherte Messung.
 
-**Stand:** Die Bluetooth-Anbindung ist implementiert und mit synthetischen
-Protokollpaketen getestet. Ein Ende-zu-Ende-Test mit der konkreten SBF 70 S-A
-und dem Samsung A17 steht noch aus. Die App enthält keine vorgetäuschten
-Messungen. Screenshots und Integrationstests verwenden ausdrücklich Testdaten.
-Die BMR-/AMR-/BMI-Byteinterpretation muss beim Hardwaretest mit dem Waagendisplay
-verglichen werden. Andere Waagenmodelle werden nicht als kompatibel behauptet.
+**Hardwareprüfung offen:** Das dokumentierte Protokoll startet eine Messung per
+App mit einer Waagen-Benutzerkennung. Dieser Befehl entfällt hier bewusst.
+Ob die konkrete Firmware nach Anmeldung und manuellem Wiegen vollständige
+Live-Pakete überträgt, muss an der echten Waage geprüft werden. „Verbunden“ bestätigt
+die Anmeldung, nicht die erfolgreiche Messwertübertragung. Wenn nur Gewicht oder
+keine Werte eintreffen: unter Profil die Bluetooth-Diagnose speichern.
 
-## Installieren und verwenden
+Profilangaben bleiben lokal. Körperanalysewerte werden nur übernommen, soweit die
+Waage sie sendet; die App errechnet keine fehlenden Körperwerte. Offline-Messungen
+werden nicht nachgeladen. Android 8+, ARM32/ARM64/x86-64.
 
-Voraussetzung: Android **8.0 oder neuer**. Für die Waage wird Bluetooth Low Energy
-benötigt. Die APK enthält ARM32, ARM64 und x86-64. Eine Unterstützung jedes
-Handymodells ist ohne Gerätetests nicht garantiert.
-
-1. Die signierte `healthcoach-1.2.0.apk` aus dem [GitHub-Release](https://github.com/Florre1/healtcoach/releases/tag/v1.2.0) herunterladen. Bestehende Installationen direkt aktualisieren.
-2. Auf dem Android-Handy öffnen und die Installation aus dieser Quelle erlauben.
-3. Profil anlegen: Name, Waagenkürzel, Geburtsdatum, Größe, Geschlecht,
-   Aktivitätsniveau und Zielgewicht. Diese Angaben gehen an die Waage, nicht an
-   einen Server.
-4. Bestehende Waagenprofile (z. B. aus der Sanitas-App) müssen nicht übernommen
-   werden. HealthCoach legt einmalig einen eigenen Benutzerplatz auf der Waage an
-   und schreibt vor jeder Messung die Daten des aktiven Profils hinein. Andere
-   Benutzer auf der Waage werden weder verglichen noch verändert.
-5. Bluetooth einschalten, die Sanitas-App vollständig schließen, die Waage kurz
-   antippen und in HealthCoach auf die Waagenkarte → **Waage suchen** tippen.
-6. Die SBF 70 auswählen und die Android-Bluetooth-Freigabe erteilen. Auf älteren
-   Android-Versionen erfordert BLE-Suche die Standortfreigabe und aktivierten Standort.
-7. Bei „Bereit“ barfuß aufsteigen und warten, bis die vollständige Messung gespeichert ist.
-
-Danach: App öffnen, Waage aktivieren und wiegen. Die App sucht beim Öffnen bis zu
-25 Sekunden nach der gespeicherten Waage. Bei Bedarf die Suche erneut starten.
-Bereits lokal gespeicherte Daten sind auch ohne Bluetooth verfügbar. Die Waage
-darf nicht gleichzeitig von der Hersteller-App belegt sein.
-
-Version 1.0.1 verbessert den Verbindungsaufbau: maximal drei Versuche, kurze
-Pausen und erneute Suche nach der ausgewählten Waage bei Abbrüchen. Manuelles
-Trennen beendet die Wiederholungen. „Bereit“ erscheint erst nach Bestätigung
-der Waage. Unvollständige oder widersprüchliche Datenpakete werden verworfen;
-verspätete Rückmeldungen alter Verbindungen beeinflussen keine neue Sitzung.
-
-Jede vollständige Messung wird dem Profil gespeichert, das beim Wiegen in der App
-aktiv ist – unabhängig davon, welchem Benutzer die Waage sie intern zuordnet.
-Messungen, die die Waage auf dem HealthCoach-Platz gespeichert hat (z. B. ohne
-offene App), lädt die App beim nächsten Verbinden in das dann aktive Profil.
-Jede Messung wird nur einmal übernommen. Vor dem Start des App-Profils
-entstandene Werte werden nicht importiert.
-
-Fehlende Körperwerte erscheinen als „nicht verfügbar“. Bei manuellen Einträgen
-wird nur der BMI aus dem Gewicht und der zum Eintragszeitpunkt gespeicherten Größe
-berechnet; sonstige Körperwerte werden nicht erfunden. BMR und AMR sind die
-Schätzwerte der Waage und keine erfasste Nahrungsaufnahme.
+Installation: signierte APK aus den [Releases](https://github.com/Florre1/healtcoach/releases)
+über die bestehende Installation installieren. Die neue Testversion trägt 1.3.0.
 
 ## Daten und Sicherung
 
@@ -145,7 +103,7 @@ liegen können.
 ## Tests
 
 `flutter test` prüft Paketdekodierung, Einheiten, Zeitstempel-Flag,
-Benutzerabgleich, fehlende/fremde/fragmentierte Daten, Duplikate, Profiltrennung,
+direkten Empfang, fremde Benutzerkennungen, fragmentierte Daten, Duplikate, Profiltrennung,
 Sicherung, Wiederherstellung und Tagesaggregation. Testpakete sind synthetisch.
 
 Auf einem laufenden Android-Emulator:

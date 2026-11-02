@@ -12,7 +12,7 @@ enum ConnectionPhase {
   checking,
   scanning,
   connecting,
-  synchronizing,
+  subscribing,
   retrying,
   ready,
   error,
@@ -46,7 +46,7 @@ class _Session {
 class ScaleConnection extends ChangeNotifier {
   final BleTransport _ble;
   final Future<bool> Function(Measurement) onReading;
-  final Future<void> Function(Profile, String, String, String) onBound;
+  final Future<void> Function(Profile, String, String) onBound;
   ScaleConnection({
     required this.onReading,
     required this.onBound,
@@ -205,7 +205,11 @@ class ScaleConnection extends ChangeNotifier {
           '',
         );
         final targetId = s.device?.id ?? s.profile.deviceId;
-        if (!name.contains('SBF70') && device.id != targetId) return;
+        if (!name.contains('SBF70') &&
+            device.id != targetId &&
+            !device.serviceUuids.contains(scaleService)) {
+          return;
+        }
         devices[device.id] = device;
         _notify();
         if (automatic && device.id == targetId) {
@@ -262,7 +266,9 @@ class ScaleConnection extends ChangeNotifier {
   void _openLink(_Session s) {
     if (!_current(s)) return;
     s.connecting = true;
-    s.protocol = SanitasProtocol(s.profile);
+    s.protocol = SanitasProtocol(
+      s.profile.withDevice(s.device!.id, s.device!.name),
+    );
     _state(
       ConnectionPhase.connecting,
       'Verbindung zur Waage wird aufgebaut (${s.attempt}/3) …',
@@ -272,7 +278,7 @@ class ScaleConnection extends ChangeNotifier {
       const Duration(seconds: 90),
       () => _fail(
         s,
-        'Der Abgleich dauert zu lange. Die Verbindung wird neu aufgebaut.',
+        'Die Anmeldung dauert zu lange. Die Verbindung wird neu aufgebaut.',
       ),
     );
     _progressDeadline(s);
@@ -287,8 +293,8 @@ class ScaleConnection extends ChangeNotifier {
               s.connected = true;
               _progressDeadline(s);
               _state(
-                ConnectionPhase.synchronizing,
-                'Waage wird vorbereitet und gespeicherte Messungen werden geladen …',
+                ConnectionPhase.subscribing,
+                'Bluetooth-Empfang wird eingerichtet …',
               );
               _enqueue(s, () => _subscribe(s));
             } else if (update.connectionState ==
@@ -314,7 +320,19 @@ class ScaleConnection extends ChangeNotifier {
   }
 
   Future<void> _subscribe(_Session s) async {
-    await _ble.validate(s.device!.id).timeout(const Duration(seconds: 8));
+    _log('GATT discovery');
+    try {
+      await _ble.validate(s.device!.id).timeout(const Duration(seconds: 12));
+    } on BluetoothUnavailable {
+      rethrow;
+    } catch (e) {
+      _fail(
+        s,
+        'Bluetooth-Dienst der Waage konnte nicht eingerichtet werden. Bitte Sanitas-App schließen und Waage neu aufwecken.',
+        error: e,
+      );
+      return;
+    }
     if (!_current(s)) return;
     s.notifications = _ble
         .notifications(s.device!.id)
@@ -333,18 +351,16 @@ class ScaleConnection extends ChangeNotifier {
                 s.measurement?.cancel();
                 s.measurement = null;
               } else if (!partial) {
-                s.measurement = Timer(
-                  const Duration(seconds: 15),
-                  () => _fail(
-                    s,
-                    'Die Messung wurde nicht vollständig übertragen. Bitte Waage aufwecken.',
-                  ),
-                );
+                s.measurement = Timer(const Duration(seconds: 15), () {
+                  if (_current(s)) {
+                    _enqueue(s, () => _events(s, protocol.discardPartial()));
+                  }
+                });
               }
               if (protocol.phase != 'init') s.handshake?.cancel();
               await _events(s, events);
               if (_current(s) &&
-                  phase == ConnectionPhase.synchronizing &&
+                  phase == ConnectionPhase.subscribing &&
                   before != protocol.progress) {
                 _progressDeadline(s);
               }
@@ -419,9 +435,20 @@ class ScaleConnection extends ChangeNotifier {
       switch (event) {
         case SendFrame():
           _log('TX ${hexBytes(event.bytes)}');
-          await _ble
-              .write(s.device!.id, event.bytes)
-              .timeout(const Duration(seconds: 6));
+          try {
+            await _ble
+                .write(s.device!.id, event.bytes)
+                .timeout(const Duration(seconds: 6));
+          } catch (e) {
+            _fail(
+              s,
+              event.bytes.first == 0xe6
+                  ? 'Bluetooth-Anmeldung fehlgeschlagen. Waage aufwecken und Sanitas-App schließen.'
+                  : 'Empfangsbestätigung fehlgeschlagen. Bitte erneut verbinden.',
+              error: e,
+            );
+            return;
+          }
         case ScaleMessage():
           if (event.error) {
             _fail(s, event.text, retry: event.retryable);
@@ -429,27 +456,19 @@ class ScaleConnection extends ChangeNotifier {
           }
           message = event.text;
           _notify();
-        case ScaleBound():
+        case ScaleReady():
           await _persist(
             s,
-            () => onBound(
-              s.profile,
-              s.device!.id,
-              connectedName!,
-              event.remoteId,
-            ),
+            () => onBound(s.profile, s.device!.id, connectedName!),
           );
           if (!_current(s)) return;
-          s.profile = s.profile.withDevice(
-            s.device!.id,
-            connectedName,
-            remote: event.remoteId,
-          );
-        case ScaleReady():
           s.deadline?.cancel();
           s.progressTimer?.cancel();
           s.handshake?.cancel();
-          _state(ConnectionPhase.ready, 'Bereit. Steige barfuß auf die Waage.');
+          _state(
+            ConnectionPhase.ready,
+            'Verbunden. Jetzt an der Waage wiegen; warte auf Messwerte.',
+          );
         case ScaleBattery():
           battery = event.percent;
           _notify();

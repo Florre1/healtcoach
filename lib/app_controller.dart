@@ -23,12 +23,10 @@ class AppController extends ChangeNotifier {
     scale = ScaleConnection(
       transport: transport,
       onReading: addMeasurement,
-      onBound: (p, id, name, remote) async {
+      onBound: (p, id, name) async {
         final latest = profiles.where((item) => item.id == p.id).firstOrNull;
         if (latest == null) return;
-        await repository.saveProfile(
-          latest.withDevice(id, name, remote: remote),
-        );
+        await repository.saveProfile(latest.withDevice(id, name));
         profiles = await repository.profiles();
         notifyListeners();
       },

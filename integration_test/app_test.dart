@@ -47,7 +47,7 @@ void main() {
         'Alex',
       );
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Kürzel auf der Waage'),
+        find.widgetWithText(TextFormField, 'Profilkürzel'),
         'ALX',
       );
       await tester.testTextInput.receiveAction(TextInputAction.done);

@@ -1,5 +1,14 @@
 # Prüfstand
 
+## Version 1.3.0 – direkter Empfang
+
+- 49 automatisierte Tests erfolgreich; Tests des entfernten Benutzer-/Historienabgleichs durch Empfangstests ersetzt.
+- Codeanalyse und Dart-Formatprüfung ohne Befunde.
+- Empfang bestätigt fremde Benutzerkennungen, verwirft unvollständige Pakete und verarbeitet keine historischen Messungen.
+- Profildaten bleiben lokal; ausgehende Protokollbefehle sind Anmeldung und Empfangsbestätigungen.
+- Bluetooth-Dienste werden explizit neu erkannt; Diensterkennung, Anmeldung und Empfangsbestätigung haben unterscheidbare Fehlertexte.
+- Echter passiver Messwertempfang ohne benutzerbezogenen Messstart ist noch nicht hardwarebestätigt. Siehe [HARDWARE_TEST.md](HARDWARE_TEST.md).
+
 ## Version 1.2.0
 
 Geprüft am 2. November 2026.

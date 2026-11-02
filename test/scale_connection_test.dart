@@ -99,7 +99,7 @@ void main() {
   late List<String> bindings;
   void setup({
     Future<bool> Function(Measurement)? save,
-    Future<void> Function(Profile, String, String, String)? bind,
+    Future<void> Function(Profile, String, String)? bind,
   }) {
     ble = FakeBle();
     readings = [];
@@ -114,8 +114,8 @@ void main() {
           },
       onBound:
           bind ??
-          (p, id, name, remote) async {
-            bindings.add(remote);
+          (p, id, name) async {
+            bindings.add(id);
           },
     );
   }
@@ -135,13 +135,6 @@ void main() {
 
   void ready(FakeAsync time) {
     receive(time, [0xe6, 0, 0x20]);
-    receive(time, [0xe7, 0xf0, 0x4f, 0, 90, 20, 20, 1, 0, 0, 0, 1]);
-    receive(time, [0xe7, 0xf0, 0x33, 0, 1, 8]);
-    receive(time, remoteUserFrame());
-    receive(time, updateAck);
-    receive(time, [0xe7, 0xf0, 0x41, 0, 0]);
-    expect(scale.phase, ConnectionPhase.synchronizing);
-    receive(time, [0xe7, 0xf0, 0x40, 0]);
     expect(scale.phase, ConnectionPhase.ready);
   }
 
@@ -192,7 +185,7 @@ void main() {
     }),
   );
   test(
-    'unfinished live measurement times out even while link stays connected',
+    'unfinished measurement is discarded without dropping the connection',
     () => fakeAsync((time) {
       setup();
       open(time);
@@ -200,7 +193,7 @@ void main() {
       receive(time, [0xe7, 0x59, 3, 1, 1, ...idBytes('0000000000000065')]);
       receive(time, [0xe7, 0x59, 3, 2, ...measurementPacket().take(11)]);
       time.elapse(const Duration(seconds: 15));
-      expect(scale.phase, ConnectionPhase.retrying);
+      expect(scale.phase, ConnectionPhase.ready);
       expect(readings, isEmpty);
       finish(time);
     }),
@@ -490,17 +483,13 @@ void main() {
     }),
   );
   test(
-    'missing start ACK never claims ready and rejected start retries',
+    'missing handshake never claims ready; rejection stops cleanly',
     () => fakeAsync((time) {
       setup();
       open(time);
-      receive(time, [0xe6, 0, 0x20]);
-      receive(time, [0xe7, 0xf0, 0x4f, 0, 90, 20, 20, 1, 0, 0, 0, 1]);
-      receive(time, [0xe7, 0xf0, 0x33, 0, 0, 8]);
-      receive(time, [0xe7, 0xf0, 0x31, 0]);
-      expect(scale.phase, ConnectionPhase.synchronizing);
-      receive(time, [0xe7, 0xf0, 0x40, 1]);
-      expect(scale.phase, ConnectionPhase.retrying);
+      expect(scale.phase, ConnectionPhase.subscribing);
+      receive(time, [0xe6, 1, 0x20]);
+      expect(scale.phase, ConnectionPhase.error);
       finish(time);
     }),
   );
@@ -584,13 +573,11 @@ void main() {
     'profile changes wait for in-flight binding persistence',
     () => fakeAsync((time) {
       final bound = Completer<void>();
-      setup(bind: (_, _, _, _) => bound.future);
+      setup(bind: (_, _, _) => bound.future);
       open(time);
       receive(time, [0xe6, 0, 0x20]);
       receive(time, [0xe7, 0xf0, 0x4f, 0, 90, 20, 20, 1, 0, 0, 0, 1]);
       receive(time, [0xe7, 0xf0, 0x33, 0, 1, 8]);
-      receive(time, remoteUserFrame());
-      receive(time, updateAck);
       var disconnected = false;
       unawaited(
         scale.disconnect(quiet: true).then((_) {

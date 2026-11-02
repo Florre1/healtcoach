@@ -88,6 +88,7 @@ class AndroidBleTransport implements BleTransport {
   @override
   Future<void> validate(String deviceId) async {
     _writeWithResponse.remove(deviceId);
+    await _ble.discoverAllServices(deviceId);
     final services = await _ble.getDiscoveredServices(deviceId);
     final characteristics = services
         .where((s) => s.id == scaleService)
