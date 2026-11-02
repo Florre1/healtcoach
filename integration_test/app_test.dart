@@ -15,6 +15,14 @@ void main() {
   testWidgets(
     'onboarding, daily tracking, all charts, profile isolation and persistence',
     (tester) async {
+      Future<void> screenshot(String name) async {
+        // Let the live test binding fade its pointer markers before capture.
+        for (var frame = 0; frame < 6; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        await binding.takeScreenshot(name);
+      }
+
       await initializeDateFormatting('de_DE');
       final testDbPath =
           '${await getDatabasesPath()}/healthcoach-integration.db';
@@ -29,7 +37,7 @@ void main() {
       if (Platform.isAndroid) await binding.convertFlutterSurfaceToImage();
       await tester.pumpAndSettle();
       expect(find.text('Dein Körper.\nDein Fortschritt.'), findsOneWidget);
-      await binding.takeScreenshot('01-welcome');
+      await screenshot('01-welcome');
       await tester.tap(find.text('Mein Profil einrichten'));
       await tester.pumpAndSettle();
       // Complete onboarding through the real form, including the date picker.
@@ -70,7 +78,7 @@ void main() {
       final p = c.profile!;
       final now = DateTime.now();
       expect(find.text('Hallo, Alex.'), findsOneWidget);
-      await binding.takeScreenshot('02-empty-dashboard');
+      await screenshot('02-empty-dashboard');
       // Test real form entry, decimal comma, automatic BMI and immediate chart update.
       await tester.tap(find.text('Messungen').last);
       await tester.pumpAndSettle();
@@ -112,10 +120,10 @@ void main() {
       }
       await tester.tap(find.text('Heute').last);
       await tester.pumpAndSettle();
-      await binding.takeScreenshot('03-dashboard');
+      await screenshot('03-dashboard');
       await tester.tap(find.text('Verlauf').last);
       await tester.pumpAndSettle();
-      await binding.takeScreenshot('04-trends');
+      await screenshot('04-trends');
       expect(tester.takeException(), isNull);
       for (final metric in [
         Metric.fat,
@@ -123,7 +131,7 @@ void main() {
         Metric.amr,
         Metric.impedance,
       ]) {
-        await tester.tap(find.byType(DropdownButtonFormField<Metric>));
+        await tester.tap(find.byType(DropdownButton<Metric>));
         await tester.pumpAndSettle();
         await tester.ensureVisible(find.text(metric.label).last);
         await tester.tap(find.text(metric.label).last);
@@ -132,11 +140,11 @@ void main() {
       }
       await tester.tap(find.text('Messungen').last);
       await tester.pumpAndSettle();
-      await binding.takeScreenshot('05-history');
+      await screenshot('05-history');
       await tester.tap(find.text('80,25 kg').first);
       await tester.pumpAndSettle();
       expect(find.text('Manuell eingetragen · BMI berechnet'), findsOneWidget);
-      await binding.takeScreenshot('06-measurement');
+      await screenshot('06-measurement');
       // Bottom sheet dismissal, then profile and dark theme.
       Navigator.of(
         tester.element(find.text('Manuell eingetragen · BMI berechnet')),
@@ -144,11 +152,11 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Profil').last);
       await tester.pumpAndSettle();
-      await binding.takeScreenshot('07-profile');
+      await screenshot('07-profile');
       await c.setTheme(ThemeMode.dark);
       await tester.tap(find.text('Heute').last);
       await tester.pumpAndSettle();
-      await binding.takeScreenshot('08-dark');
+      await screenshot('08-dark');
       expect(tester.takeException(), isNull);
       final other = Profile(
         id: 'integration-other',

@@ -8,6 +8,7 @@ import 'package:file_picker/file_picker.dart';
 import 'data/repository.dart';
 import 'domain/models.dart';
 import 'bluetooth/scale_connection.dart';
+import 'bluetooth/ble_transport.dart';
 
 class AppController extends ChangeNotifier {
   final Repository repository;
@@ -15,11 +16,12 @@ class AppController extends ChangeNotifier {
   List<Profile> profiles = [];
   List<Measurement> measurements = [];
   String? activeId;
-  ThemeMode themeMode = ThemeMode.system;
+  ThemeMode themeMode = ThemeMode.dark;
   bool autoConnect = true;
   Profile? get profile => profiles.where((p) => p.id == activeId).firstOrNull;
-  AppController(this.repository) {
+  AppController(this.repository, {BleTransport? transport}) {
     scale = ScaleConnection(
+      transport: transport,
       onReading: addMeasurement,
       onBound: (p, id, name, remote) async {
         final latest = profiles.where((item) => item.id == p.id).firstOrNull;
@@ -42,7 +44,7 @@ class AppController extends ChangeNotifier {
     final theme = await repository.setting('theme');
     themeMode =
         ThemeMode.values.where((m) => m.name == theme).firstOrNull ??
-        ThemeMode.system;
+        ThemeMode.dark;
     await refresh();
   }
 

@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../domain/models.dart';
 import 'theme.dart';
+import 'glass.dart';
 
 String number(double value, [int digits = 1]) =>
     NumberFormat.decimalPatternDigits(
@@ -21,25 +22,40 @@ class Panel extends StatelessWidget {
   const Panel({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(22),
+    this.padding = const EdgeInsets.all(16),
   });
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(padding: padding, child: child),
-  );
+  Widget build(BuildContext context) =>
+      GlassSurface(padding: padding, child: child);
 }
 
 class SectionTitle extends StatelessWidget {
   final String title;
   final Widget? trailing;
-  const SectionTitle(this.title, {super.key, this.trailing});
+  final bool compact;
+  const SectionTitle(
+    this.title, {
+    super.key,
+    this.trailing,
+    this.compact = false,
+  });
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 26, bottom: 14),
+    padding: const EdgeInsets.only(top: 26, bottom: 10),
     child: Row(
       children: [
         Expanded(
-          child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+          child: Text(
+            compact ? title.toUpperCase() : title,
+            style: compact
+                ? TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: .3,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  )
+                : Theme.of(context).textTheme.titleLarge,
+          ),
         ),
         ?trailing,
       ],
@@ -92,11 +108,15 @@ class TrendChart extends StatelessWidget {
   final List<Measurement> measurements;
   final Metric metric;
   final double? goal;
+  final double height;
+  final ValueChanged<Measurement?>? onSelected;
   const TrendChart({
     super.key,
     required this.measurements,
     required this.metric,
     this.goal,
+    this.height = 210,
+    this.onSelected,
   });
   @override
   Widget build(BuildContext context) {
@@ -142,7 +162,7 @@ class TrendChart extends StatelessWidget {
     final maxX = math.max(1.0, spots.last.x);
     final color = Theme.of(context).colorScheme.primary;
     return SizedBox(
-      height: 230,
+      height: height,
       child: Padding(
         padding: const EdgeInsets.only(right: 14, top: 12),
         child: LineChart(
@@ -166,13 +186,15 @@ class TrendChart extends StatelessWidget {
               topTitles: const AxisTitles(
                 sideTitles: SideTitles(showTitles: false),
               ),
-              rightTitles: const AxisTitles(
+              leftTitles: const AxisTitles(
                 sideTitles: SideTitles(showTitles: false),
               ),
-              leftTitles: AxisTitles(
+              rightTitles: AxisTitles(
                 sideTitles: SideTitles(
                   showTitles: true,
-                  reservedSize: 48,
+                  reservedSize: 40,
+                  minIncluded: false,
+                  maxIncluded: false,
                   interval: (maxY - minY) / 3,
                   getTitlesWidget: (v, meta) => Text(
                     number(v, metric.digits == 0 ? 0 : 1),
@@ -188,8 +210,13 @@ class TrendChart extends StatelessWidget {
                   showTitles: true,
                   reservedSize: 28,
                   interval: math.max(1, (maxX / 3).ceil()).toDouble(),
-                  getTitlesWidget: (v, meta) => Padding(
-                    padding: const EdgeInsets.only(top: 9),
+                  getTitlesWidget: (v, meta) => SideTitleWidget(
+                    meta: meta,
+                    space: 9,
+                    fitInside: SideTitleFitInsideData.fromTitleMeta(
+                      meta,
+                      distanceFromEdge: 0,
+                    ),
                     child: Text(
                       DateFormat('dd.MM.').format(
                         DateTime.fromMillisecondsSinceEpoch(
@@ -215,6 +242,14 @@ class TrendChart extends StatelessWidget {
               ],
             ),
             lineTouchData: LineTouchData(
+              touchCallback: (event, response) {
+                final touched = response?.lineBarSpots?.firstOrNull;
+                onSelected?.call(
+                  event.isInterestedForInteractions && touched != null
+                      ? points[touched.spotIndex]
+                      : null,
+                );
+              },
               touchTooltipData: LineTouchTooltipData(
                 getTooltipItems: (items) => items
                     .map(
@@ -235,7 +270,16 @@ class TrendChart extends StatelessWidget {
                 isCurved: false,
                 color: color,
                 barWidth: 3,
-                dotData: FlDotData(show: spots.length < 35),
+                dotData: FlDotData(
+                  show: true,
+                  getDotPainter: (spot, percent, bar, index) =>
+                      FlDotCirclePainter(
+                        radius: index == spots.length - 1 ? 4 : 2,
+                        color: color,
+                        strokeWidth: 1.2,
+                        strokeColor: Theme.of(context).colorScheme.surface,
+                      ),
+                ),
                 belowBarData: BarAreaData(
                   show: true,
                   gradient: LinearGradient(
@@ -250,7 +294,9 @@ class TrendChart extends StatelessWidget {
               ),
             ],
           ),
-          duration: const Duration(milliseconds: 250),
+          // Show newly synchronized history immediately, including after an
+          // offstage tab becomes visible; avoid interpolating unequal series.
+          duration: Duration.zero,
         ),
       ),
     );

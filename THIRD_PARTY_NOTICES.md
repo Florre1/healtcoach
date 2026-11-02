@@ -24,3 +24,9 @@ Flutter and package dependencies retain their respective licenses. The Flutter
 license page in the app lists package notices. The complete dependency versions
 are locked in pubspec.lock. Sanitas and Beurer are trademarks of their respective
 owners; this app is an independent project.
+
+## Inter
+
+The bundled Inter variable font is copyright (c) 2016 The Inter Project Authors
+(https://github.com/rsms/inter) and distributed under SIL Open Font License 1.1.
+The complete license is included at `assets/fonts/OFL.txt` and in the app license page.

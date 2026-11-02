@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
@@ -87,6 +88,11 @@ class _ProfileFormState extends State<ProfileForm> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
+      leading: IconButton(
+        tooltip: 'Schließen',
+        icon: const Icon(CupertinoIcons.xmark),
+        onPressed: () => Navigator.pop(context),
+      ),
       title: Text(
         widget.existing == null ? 'Dein Profil' : 'Profil bearbeiten',
       ),
@@ -321,6 +327,13 @@ class _MeasurementFormState extends State<MeasurementForm> {
     padding: const EdgeInsets.only(bottom: 16),
     child: TextFormField(
       controller: fields[m],
+      style: m == Metric.weight
+          ? const TextStyle(
+              fontSize: 48,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -1.8,
+            )
+          : null,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       decoration: InputDecoration(labelText: m.label, suffixText: m.unit),
       validator: (s) {
@@ -334,7 +347,14 @@ class _MeasurementFormState extends State<MeasurementForm> {
   );
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Messung eintragen')),
+    appBar: AppBar(
+      leading: IconButton(
+        tooltip: 'Schließen',
+        icon: const Icon(CupertinoIcons.xmark),
+        onPressed: () => Navigator.pop(context),
+      ),
+      title: const Text('Messung eintragen'),
+    ),
     body: SafeArea(
       child: Center(
         child: ConstrainedBox(

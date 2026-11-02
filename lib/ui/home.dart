@@ -1,5 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
+
+import 'glass.dart';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -24,110 +28,206 @@ class _HomeState extends State<Home> {
   Metric metric = Metric.weight;
   int days = 30;
   AppController get c => widget.controller;
-  void editProfile([Profile? profile]) => Navigator.push(
-    context,
-    MaterialPageRoute<void>(
-      builder: (_) => ProfileForm(controller: c, existing: profile),
+  Measurement? selectedPoint;
+  final scrollPhases = [0, 0, 0, 0];
+  void editProfile([Profile? profile]) => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => GlassSheet(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * .91,
+        child: ProfileForm(controller: c, existing: profile),
+      ),
     ),
   );
-  void addMeasurement() => Navigator.push(
-    context,
-    MaterialPageRoute<void>(builder: (_) => MeasurementForm(controller: c)),
+  void addMeasurement() => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => GlassSheet(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * .91,
+        child: MeasurementForm(controller: c),
+      ),
+    ),
   );
   @override
   Widget build(BuildContext context) {
     if (c.profile == null) return _welcome();
     final p = c.profile!;
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: forest,
-                borderRadius: BorderRadius.circular(11),
-              ),
-              child: const Icon(Icons.spa_outlined, color: lime, size: 21),
-            ),
-            const SizedBox(width: 10),
-            const Text(
-              'HealthCoach',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-            ),
-          ],
-        ),
-        actions: [
-          PopupMenuButton<String>(
-            tooltip: 'Profil wechseln',
-            onSelected: (id) {
-              if (id == 'new') {
-                editProfile();
-              } else {
-                unawaited(guarded(context, () => c.selectProfile(id)));
-              }
-            },
-            itemBuilder: (_) => [
-              for (final item in c.profiles)
-                PopupMenuItem(
-                  value: item.id,
-                  child: Text('${item.id == p.id ? '✓ ' : ''}${item.name}'),
-                ),
-              const PopupMenuItem(value: 'new', child: Text('+ Neues Profil')),
-            ],
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: CircleAvatar(
-                radius: 19,
-                backgroundColor: lime,
-                child: Text(
-                  p.initials,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: forest,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
       body: SafeArea(
-        top: false,
+        bottom: false,
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
-            child: IndexedStack(
-              index: tab,
-              children: [_dashboard(), _trends(), _history(), _settings()],
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: (event) {
+                      if (event.depth == 0) {
+                        final phase = event.metrics.pixels > 65
+                            ? 2
+                            : event.metrics.pixels > 2
+                            ? 1
+                            : 0;
+                        if (scrollPhases[tab] != phase) {
+                          setState(() => scrollPhases[tab] = phase);
+                        }
+                      }
+                      return false;
+                    },
+                    child: IndexedStack(
+                      index: tab,
+                      children: [
+                        _dashboard(),
+                        _trends(),
+                        _history(),
+                        _settings(),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  height: 58,
+                  child: IgnorePointer(
+                    child: AnimatedOpacity(
+                      opacity: scrollPhases[tab] > 0 ? 1 : 0,
+                      duration: const Duration(milliseconds: 180),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              (dark ? Colors.black : const Color(0xffedf1ed))
+                                  .withValues(alpha: .9),
+                              (dark ? Colors.black : const Color(0xffedf1ed))
+                                  .withValues(alpha: .0),
+                            ],
+                          ),
+                        ),
+                        child: Center(
+                          child: scrollPhases[tab] == 2
+                              ? Text(
+                                  const [
+                                    'Heute',
+                                    'Verlauf',
+                                    'Messungen',
+                                    'Profil',
+                                  ][tab],
+                                  style: const TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                )
+                              : null,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (tab == 0)
+                  Positioned(
+                    right: 16,
+                    top: 6,
+                    child: GlassSurface(
+                      radius: 24,
+                      floating: true,
+                      child: PopupMenuButton<String>(
+                        tooltip: 'Profil wechseln',
+                        onSelected: (id) {
+                          if (id == 'new') {
+                            editProfile();
+                          } else {
+                            unawaited(
+                              guarded(context, () async {
+                                await c.selectProfile(id);
+                                if (mounted) {
+                                  setState(() => selectedPoint = null);
+                                }
+                              }),
+                            );
+                          }
+                        },
+                        itemBuilder: (_) => [
+                          for (final item in c.profiles)
+                            PopupMenuItem(
+                              value: item.id,
+                              child: Text(
+                                '${item.id == p.id ? '✓ ' : ''}${item.name}',
+                              ),
+                            ),
+                          const PopupMenuItem(
+                            value: 'new',
+                            child: Text('+ Neues Profil'),
+                          ),
+                        ],
+                        child: Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: CircleAvatar(
+                            radius: 17,
+                            backgroundColor: lime,
+                            child: Text(
+                              p.initials,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: forest,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 120,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            (dark ? Colors.black : const Color(0xffedf1ed))
+                                .withValues(alpha: .8),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 20,
+                  right: 20,
+                  bottom: 0,
+                  child: SafeArea(
+                    top: false,
+                    minimum: const EdgeInsets.only(bottom: 16),
+                    child: GlassNavigation(
+                      selected: tab,
+                      onSelected: (value) => setState(() {
+                        tab = value;
+                        selectedPoint = null;
+                      }),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: tab,
-        onDestinationSelected: (v) => setState(() => tab = v),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.space_dashboard_outlined),
-            selectedIcon: Icon(Icons.space_dashboard_rounded),
-            label: 'Heute',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.insights_outlined),
-            label: 'Verlauf',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.history_rounded),
-            label: 'Messungen',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline_rounded),
-            label: 'Profil',
-          ),
-        ],
       ),
     );
   }
@@ -233,7 +333,7 @@ class _HomeState extends State<Home> {
         : ((start! - latest!.weight) / (start - p.goalKg)).clamp(0.0, 1.0);
     return ListView(
       key: const PageStorageKey('dashboard'),
-      padding: const EdgeInsets.fromLTRB(22, 18, 22, 32),
+      padding: const EdgeInsets.fromLTRB(16, 64, 16, 140),
       children: [
         Text(
           DateFormat('EEEE, d. MMMM', 'de_DE').format(now).toUpperCase(),
@@ -259,85 +359,103 @@ class _HomeState extends State<Home> {
           ),
         ),
         const SizedBox(height: 24),
-        Container(
-          padding: const EdgeInsets.all(25),
-          decoration: BoxDecoration(
-            color: forest,
-            borderRadius: BorderRadius.circular(28),
-          ),
+        GlassSurface(
+          prominent: true,
+          radius: 30,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  const Icon(
-                    Icons.monitor_weight_outlined,
-                    color: lime,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'DEIN GEWICHT',
+                      'Dein Gewicht',
                       style: TextStyle(
-                        color: Colors.white70,
-                        letterSpacing: 1.8,
-                        fontSize: 11,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                   ),
                   if (today)
-                    const Icon(
-                      Icons.check_circle_rounded,
-                      color: lime,
-                      size: 21,
+                    Icon(
+                      CupertinoIcons.checkmark_circle_fill,
+                      size: 20,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                 ],
               ),
-              const SizedBox(height: 18),
-              Wrap(
-                crossAxisAlignment: WrapCrossAlignment.end,
-                spacing: 10,
-                children: [
-                  Text(
-                    latest == null ? '—' : number(latest.weight, 2),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 56,
-                      fontWeight: FontWeight.w600,
-                      height: 1,
-                      letterSpacing: -2,
-                    ),
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      'kg',
-                      style: TextStyle(color: Colors.white70, fontSize: 21),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Text(
-                latest == null
-                    ? 'Deine erste Messung wartet auf dich.'
-                    : 'Zuletzt ${dateLabel(latest.time)}',
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 18),
-                child: Divider(height: 1, color: Colors.white24),
-              ),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      'Dein Ziel  ${number(p.goalKg)} kg',
-                      style: const TextStyle(
-                        color: lime,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.baseline,
+                            textBaseline: TextBaseline.alphabetic,
+                            children: [
+                              Text(
+                                latest == null ? '—' : number(latest.weight, 2),
+                                style: const TextStyle(
+                                  fontSize: 60,
+                                  height: 1.1,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: -2.4,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'kg',
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          latest == null
+                              ? 'Deine erste Messung wartet auf dich.'
+                              : 'Zuletzt ${dateLabel(latest.time)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  GoalRing(progress: progress),
+                ],
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 14),
+                child: Divider(height: 1),
+              ),
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                runSpacing: 6,
+                spacing: 16,
+                children: [
+                  Text(
+                    'Dein Ziel ${number(p.goalKg)} kg',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
                   Text(
@@ -346,30 +464,23 @@ class _HomeState extends State<Home> {
                         : gap < .05
                         ? 'Ziel erreicht'
                         : '${number(gap)} kg Abstand',
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
-              ),
-              const SizedBox(height: 13),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  backgroundColor: Colors.white12,
-                  color: lime,
-                  minHeight: 5,
-                ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         _connectionCard(),
         SectionTitle(
           'Dein Gewichtsverlauf',
           trailing: TextButton(
             onPressed: () => setState(() => tab = 1),
-            child: const Text('Alle Werte'),
+            child: const Text('Alle Werte', style: TextStyle(fontSize: 14)),
           ),
         ),
         Panel(
@@ -389,6 +500,7 @@ class _HomeState extends State<Home> {
                     )
                     .toList(),
                 metric: Metric.weight,
+                height: 170,
                 goal: p.goalKg,
               ),
               const Text(
@@ -415,7 +527,9 @@ class _HomeState extends State<Home> {
                   (m) => m != Metric.weight && m != Metric.impedance,
                 ))
                   SizedBox(
-                    width: (size.maxWidth - 12) / 2,
+                    width: m == Metric.amr
+                        ? size.maxWidth
+                        : (size.maxWidth - 12) / 2,
                     child: InkWell(
                       borderRadius: BorderRadius.circular(24),
                       onTap: () => setState(() {
@@ -480,67 +594,70 @@ class _HomeState extends State<Home> {
     listenable: c.scale,
     builder: (context, _) {
       final s = c.scale;
-      return Panel(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(14),
+      return GestureDetector(
+        onTap: _showScale,
+        child: Panel(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary
+                          .withValues(alpha: .16),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(
+                      CupertinoIcons.bluetooth,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 22,
+                    ),
                   ),
-                  child: Icon(
-                    s.phase == ConnectionPhase.ready
-                        ? Icons.bluetooth_connected_rounded
-                        : Icons.bluetooth_rounded,
-                    size: 22,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Sanitas SBF 70',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        Text(
+                          s.phase == ConnectionPhase.ready
+                              ? 'Verbunden${s.battery == null ? '' : ' · Akku ${s.battery}%'}'
+                              : 'Deine Bluetooth-Waage',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Sanitas SBF 70',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      Text(
-                        s.phase == ConnectionPhase.ready
-                            ? 'Verbunden${s.battery == null ? '' : ' · Akku ${s.battery}%'}'
-                            : 'Deine Bluetooth-Waage',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ],
+                  IconButton(
+                    tooltip: 'Waage verbinden',
+                    onPressed: _showScale,
+                    icon: const Icon(Icons.arrow_forward_rounded),
                   ),
-                ),
-                IconButton(
-                  tooltip: 'Waage verbinden',
-                  onPressed: _showScale,
-                  icon: const Icon(Icons.arrow_forward_rounded),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              s.message,
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.4,
-                color: s.phase == ConnectionPhase.error
-                    ? Theme.of(context).colorScheme.error
-                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                ],
               ),
-            ),
-            if (s.working) ...[
-              const SizedBox(height: 10),
-              const LinearProgressIndicator(minHeight: 2),
+              const SizedBox(height: 12),
+              Text(
+                s.message,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.4,
+                  color: s.phase == ConnectionPhase.error
+                      ? Theme.of(context).colorScheme.error
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              if (s.working) ...[
+                const SizedBox(height: 10),
+                const LinearProgressIndicator(minHeight: 2),
+              ],
             ],
-          ],
+          ),
         ),
       );
     },
@@ -550,96 +667,110 @@ class _HomeState extends State<Home> {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
-      builder: (sheet) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-          child: ListenableBuilder(
-            listenable: c.scale,
-            builder: (context, _) {
-              final s = c.scale;
-              return SizedBox(
-                height: MediaQuery.sizeOf(context).height * .68,
-                child: ListView(
-                  children: [
-                    Text(
-                      'Deine Waage verbinden',
-                      style: Theme.of(context).textTheme.headlineMedium,
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      '1. Bluetooth am Handy einschalten.\n2. Sanitas-App vollständig schließen.\n3. Waage kurz antippen und hier verbinden.\n4. Nach „Bereit“ barfuß aufsteigen.',
-                      style: TextStyle(height: 1.7),
-                    ),
-                    const SizedBox(height: 18),
-                    Panel(
-                      child: Text(
-                        s.message,
-                        style: const TextStyle(height: 1.5),
+      showDragHandle: false,
+      builder: (sheet) => GlassSheet(
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: ListenableBuilder(
+              listenable: c.scale,
+              builder: (context, _) {
+                final s = c.scale;
+                return SizedBox(
+                  height: MediaQuery.sizeOf(context).height * .68,
+                  child: ListView(
+                    children: [
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: IconButton(
+                          tooltip: 'Schließen',
+                          icon: const Icon(CupertinoIcons.xmark_circle_fill),
+                          onPressed: () => Navigator.pop(sheet),
+                        ),
                       ),
-                    ),
-                    if (s.liveWeight != null)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      Text(
+                        'Deine Waage verbinden',
+                        style: Theme.of(context).textTheme.headlineMedium,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        '1. Bluetooth am Handy einschalten.\n2. Sanitas-App vollständig schließen.\n3. Waage kurz antippen und hier verbinden.\n4. Nach „Bereit“ barfuß aufsteigen.',
+                        style: TextStyle(height: 1.7),
+                      ),
+                      const SizedBox(height: 18),
+                      Panel(
                         child: Text(
-                          '${number(s.liveWeight!, 2)} kg',
-                          style: Theme.of(context).textTheme.headlineLarge,
-                          textAlign: TextAlign.center,
+                          s.message,
+                          style: const TextStyle(height: 1.5),
                         ),
                       ),
-                    const SizedBox(height: 16),
-                    if (s.working) const LinearProgressIndicator(),
-                    for (final device in s.devices.values)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.monitor_weight_outlined),
-                        title: Text(
-                          device.name.isEmpty ? 'Sanitas SBF 70' : device.name,
+                      if (s.liveWeight != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Text(
+                            '${number(s.liveWeight!, 2)} kg',
+                            style: Theme.of(context).textTheme.headlineLarge,
+                            textAlign: TextAlign.center,
+                          ),
                         ),
-                        subtitle: Text('Signal ${device.rssi} dBm'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap:
-                            [
-                              ConnectionPhase.scanning,
-                              ConnectionPhase.idle,
-                              ConnectionPhase.error,
-                            ].contains(s.phase)
-                            ? () => guarded(
-                                context,
-                                () => s.connect(c.profile!, device),
-                              )
-                            : null,
+                      const SizedBox(height: 16),
+                      if (s.working) const LinearProgressIndicator(),
+                      for (final device in s.devices.values)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.monitor_weight_outlined),
+                          title: Text(
+                            device.name.isEmpty
+                                ? 'Sanitas SBF 70'
+                                : device.name,
+                          ),
+                          subtitle: Text('Signal ${device.rssi} dBm'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap:
+                              [
+                                ConnectionPhase.scanning,
+                                ConnectionPhase.idle,
+                                ConnectionPhase.error,
+                              ].contains(s.phase)
+                              ? () => guarded(
+                                  context,
+                                  () => s.connect(c.profile!, device),
+                                )
+                              : null,
+                        ),
+                      const SizedBox(height: 18),
+                      FilledButton.icon(
+                        onPressed: () => guarded(context, () async {
+                          if (s.busy) {
+                            await s.disconnect();
+                          } else {
+                            await s.scan(c.profile!);
+                          }
+                        }),
+                        icon: Icon(
+                          s.busy ? Icons.close_rounded : Icons.search_rounded,
+                        ),
+                        label: Text(
+                          s.busy
+                              ? 'Verbindung / Suche beenden'
+                              : 'Waage suchen',
+                        ),
                       ),
-                    const SizedBox(height: 18),
-                    FilledButton.icon(
-                      onPressed: () => guarded(context, () async {
-                        if (s.busy) {
-                          await s.disconnect();
-                        } else {
-                          await s.scan(c.profile!);
-                        }
-                      }),
-                      icon: Icon(
-                        s.busy ? Icons.close_rounded : Icons.search_rounded,
+                      if (s.phase == ConnectionPhase.error)
+                        TextButton(
+                          onPressed: openAppSettings,
+                          child: const Text('Android-App-Einstellungen öffnen'),
+                        ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Beim ersten Mal wird dein Profil auf der Waage eingerichtet oder anhand deiner Angaben zugeordnet. Bereits vorhandene Messungen vor deinem App-Start werden nicht importiert.',
+                        style: TextStyle(fontSize: 12, height: 1.5),
                       ),
-                      label: Text(
-                        s.busy ? 'Verbindung / Suche beenden' : 'Waage suchen',
-                      ),
-                    ),
-                    if (s.phase == ConnectionPhase.error)
-                      TextButton(
-                        onPressed: openAppSettings,
-                        child: const Text('Android-App-Einstellungen öffnen'),
-                      ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Beim ersten Mal wird dein Profil auf der Waage eingerichtet oder anhand deiner Angaben zugeordnet. Bereits vorhandene Messungen vor deinem App-Start werden nicht importiert.',
-                      style: TextStyle(fontSize: 12, height: 1.5),
-                    ),
-                  ],
-                ),
-              );
-            },
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -661,297 +792,608 @@ class _HomeState extends State<Home> {
         ? null
         : daily.map((m) => m.values[metric]!).reduce((a, b) => a + b) /
               daily.length;
+    final selected =
+        selectedPoint != null && daily.any((m) => m.id == selectedPoint!.id)
+        ? selectedPoint
+        : null;
     return ListView(
       key: const PageStorageKey('trends'),
-      padding: const EdgeInsets.fromLTRB(22, 20, 22, 32),
+      padding: const EdgeInsets.fromLTRB(16, 64, 16, 140),
       children: [
         Text(
           'Dein Fortschritt.',
           style: Theme.of(context).textTheme.headlineLarge,
         ),
-        const SizedBox(height: 8),
-        const Text('Die Entwicklung zählt. Tag für Tag.'),
-        const SizedBox(height: 25),
-        DropdownButtonFormField<Metric>(
-          key: ValueKey(metric),
-          initialValue: metric,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: 'Körperwert'),
-          items: Metric.values
-              .map((m) => DropdownMenuItem(value: m, child: Text(m.label)))
-              .toList(),
-          onChanged: (m) => setState(() => metric = m!),
+        const SizedBox(height: 4),
+        Text(
+          'Die Entwicklung zählt. Tag für Tag.',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
-        const SizedBox(height: 16),
-        Wrap(
-          spacing: 8,
-          children: [
-            for (final d in [7, 30, 90, 0])
-              ChoiceChip(
-                label: Text(d == 0 ? 'Alles' : '$d Tage'),
-                selected: days == d,
-                onSelected: (_) => setState(() => days = d),
+        const SizedBox(height: 18),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: GlassSurface(
+            radius: 22,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<Metric>(
+                value: metric,
+                icon: const Icon(CupertinoIcons.chevron_down, size: 14),
+                borderRadius: BorderRadius.circular(24),
+                items: Metric.values
+                    .map(
+                      (m) => DropdownMenuItem(
+                        value: m,
+                        child: Text(
+                          m.label,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) => setState(() {
+                  metric = value!;
+                  selectedPoint = null;
+                }),
               ),
-          ],
+            ),
+          ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: CupertinoSlidingSegmentedControl<int>(
+            groupValue: days,
+            backgroundColor: Colors.grey.withValues(alpha: .24),
+            thumbColor: Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xff555559)
+                : Colors.white,
+            children: {
+              for (final d in [7, 30, 90, 0])
+                d: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 7),
+                  child: Text(
+                    d == 0 ? 'Alles' : '$d Tage',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+            },
+            onValueChanged: (d) {
+              if (d != null) {
+                setState(() {
+                  days = d;
+                  selectedPoint = null;
+                });
+              }
+            },
+          ),
+        ),
+        const SizedBox(height: 14),
         Panel(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(metric.label, style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 4),
-              Text(metric.unit),
+              Text(
+                selected == null
+                    ? 'TAGESDURCHSCHNITT'
+                    : DateFormat(
+                        'EE, d. MMM yyyy',
+                        'de_DE',
+                      ).format(selected.time),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: .3,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: selected != null
+                          ? number(selected.values[metric]!, metric.digits)
+                          : mean == null
+                          ? '—'
+                          : number(mean, metric.digits),
+                      style: const TextStyle(
+                        fontSize: 34,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -.8,
+                      ),
+                    ),
+                    TextSpan(
+                      text: ' ${metric.unit}',
+                      style: TextStyle(
+                        fontSize: 17,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                selected == null
+                    ? daily.isEmpty
+                          ? 'Noch keine Werte'
+                          : '${DateFormat('d. MMM', 'de_DE').format(daily.first.time)} – ${DateFormat('d. MMM yyyy', 'de_DE').format(daily.last.time)}'
+                    : '${DateFormat('HH:mm').format(selected.time)} Uhr · ${selected.source == 'scale' ? 'Sanitas-Waage' : 'Manuell'}',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 12),
               TrendChart(
                 measurements: data,
                 metric: metric,
                 goal: metric == Metric.weight ? c.profile!.goalKg : null,
+                onSelected: (point) {
+                  if (point?.id != selectedPoint?.id) {
+                    setState(() => selectedPoint = point);
+                  }
+                },
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'Pro Tag der letzte verfügbare Wert. Fehlende Tage werden nicht aufgefüllt.',
-                style: TextStyle(fontSize: 11, height: 1.4),
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.4,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
         Panel(
-          child: Row(
+          padding: EdgeInsets.zero,
+          child: Column(
             children: [
-              Expanded(
-                child: _stat(
-                  'Veränderung',
-                  diff == null
-                      ? '—'
-                      : '${diff > 0 ? '+' : ''}${number(diff, metric.digits)} ${metric.unit}',
-                ),
+              _summaryRow(
+                'Veränderung',
+                diff == null
+                    ? '—'
+                    : '${diff > 0 ? '+' : ''}${number(diff, metric.digits)} ${metric.unit}',
               ),
-              Expanded(
-                child: _stat(
-                  'Tagesdurchschnitt',
-                  mean == null
-                      ? '—'
-                      : '${number(mean, metric.digits)} ${metric.unit}',
-                ),
-              ),
+              _summaryRow('Tage mit Messwerten', '${daily.length}'),
+              if (metric == Metric.weight)
+                _summaryRow('Dein Ziel', '${number(c.profile!.goalKg)} kg'),
             ],
           ),
         ),
-        const SizedBox(height: 18),
-        Text(metric.explanation, style: const TextStyle(height: 1.5)),
-        const SizedBox(height: 10),
-        Text(
-          '${daily.length} Tage mit Messwerten',
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontSize: 12,
+        SectionTitle('Über ${metric.label}'),
+        Panel(
+          child: Text(
+            metric.explanation,
+            style: const TextStyle(fontSize: 15, height: 1.4),
           ),
         ),
       ],
     );
   }
 
-  Widget _stat(String label, String value) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(label, style: const TextStyle(fontSize: 11)),
-      const SizedBox(height: 7),
-      Text(value, style: Theme.of(context).textTheme.titleMedium),
-    ],
-  );
-
-  Widget _history() => CustomScrollView(
-    key: const PageStorageKey('history'),
-    slivers: [
-      SliverPadding(
-        padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
-        sliver: SliverToBoxAdapter(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Deine Messungen.',
-                style: Theme.of(context).textTheme.headlineLarge,
-              ),
-              const SizedBox(height: 8),
-              Text('${c.measurements.length} Einträge · ${c.profile!.name}'),
-              const SizedBox(height: 22),
-              FilledButton.icon(
-                onPressed: addMeasurement,
-                icon: const Icon(Icons.add),
-                label: const Text('Messung eintragen'),
-              ),
-              if (c.measurements.isEmpty) ...[
-                const SizedBox(height: 22),
-                EmptyCard(
-                  title: 'Hier wächst dein Verlauf.',
-                  description: 'Verbinde deine Waage oder trage deine erste Messung ein.',
-                  action: OutlinedButton(
-                    onPressed: _showScale,
-                    child: const Text('Waage verbinden'),
-                  ),
-                ),
-              ],
-            ],
+  Widget _summaryRow(String label, String value) => Container(
+    constraints: const BoxConstraints(minHeight: 50),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    decoration: BoxDecoration(
+      border: Border(
+        bottom: BorderSide(color: Theme.of(context).dividerColor, width: .5),
+      ),
+    ),
+    child: Row(
+      children: [
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 15))),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 15,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
-      ),
-      SliverPadding(
-        padding: const EdgeInsets.fromLTRB(22, 0, 22, 32),
-        sliver: SliverList.builder(
-          itemCount: c.measurements.length,
-          itemBuilder: (context, index) {
-            final m = c.measurements[index];
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Card(
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 8,
-                  ),
-                  leading: Icon(
-                    m.source == 'scale'
-                        ? Icons.bluetooth_rounded
-                        : Icons.edit_outlined,
-                  ),
-                  title: Text(
-                    '${number(m.weight, 2)} kg',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  subtitle: Text(
-                    '${dateLabel(m.time)}\n${m.source == 'scale' ? 'Sanitas-Waage' : 'Manuell'}${m.note.isEmpty ? '' : ' · Notiz'}',
-                    style: const TextStyle(fontSize: 11, height: 1.6),
-                  ),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => _measurementDetail(m),
+      ],
+    ),
+  );
+
+  Widget _history() {
+    final groups = <String, List<Measurement>>{};
+    for (final m in c.measurements) {
+      final key = DateFormat('MMMM yyyy', 'de_DE').format(m.time.toLocal());
+      (groups[key] ??= []).add(m);
+    }
+    return CustomScrollView(
+      key: const PageStorageKey('history'),
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 64, 16, 0),
+          sliver: SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Deine Messungen.',
+                  style: Theme.of(context).textTheme.headlineLarge,
                 ),
-              ),
-            );
-          },
+                const SizedBox(height: 4),
+                Text(
+                  '${c.measurements.length} Einträge · ${c.profile!.name}',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: addMeasurement,
+                    icon: const Icon(CupertinoIcons.add),
+                    label: const Text('Messung eintragen'),
+                  ),
+                ),
+                if (c.measurements.isEmpty) ...[
+                  const SizedBox(height: 22),
+                  EmptyCard(
+                    title: 'Hier wächst dein Verlauf.',
+                    description: 'Verbinde deine Waage oder trage deine erste Messung ein.',
+                    action: OutlinedButton(
+                      onPressed: _showScale,
+                      child: const Text('Waage verbinden'),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 140),
+          sliver: SliverList.builder(
+            itemCount: groups.length,
+            itemBuilder: (context, index) {
+              final month = groups.keys.elementAt(index), rows = groups[month]!;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 26, 0, 8),
+                    child: Text(
+                      month.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  Panel(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      children: [
+                        for (var i = 0; i < rows.length; i++) ...[
+                          if (i > 0)
+                            const Padding(
+                              padding: EdgeInsets.only(left: 58),
+                              child: Divider(height: .5, thickness: .5),
+                            ),
+                          _historyRow(rows[i]),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _historyRow(Measurement m) {
+    final accent = m.source == 'scale'
+        ? Theme.of(context).colorScheme.primary
+        : const Color(0xffff9f0a);
+    final now = DateTime.now(), date = m.time.toLocal();
+    final delta = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).difference(DateTime(date.year, date.month, date.day)).inDays;
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+      leading: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: accent.withValues(alpha: .16),
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Icon(
+          m.source == 'scale'
+              ? CupertinoIcons.bluetooth
+              : CupertinoIcons.pencil,
+          size: 17,
+          color: accent,
         ),
       ),
-    ],
-  );
+      title: Text(
+        '${number(m.weight, 2)} kg',
+        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+      ),
+      subtitle: Text(
+        '${m.source == 'scale' ? 'Sanitas-Waage' : 'Manuell'}${m.note.isEmpty ? '' : ' · Notiz'}',
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                delta == 0
+                    ? 'Heute'
+                    : delta == 1
+                    ? 'Gestern'
+                    : DateFormat('dd. MMM', 'de_DE').format(date),
+                style: const TextStyle(fontSize: 14),
+              ),
+              Text(
+                DateFormat('HH:mm').format(date),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 10),
+          Icon(
+            CupertinoIcons.chevron_right,
+            size: 13,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ],
+      ),
+      onTap: () => _measurementDetail(m),
+    );
+  }
 
   void _measurementDetail(Measurement m) => showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
-    showDragHandle: true,
-    builder: (sheet) => SafeArea(
-      child: SizedBox(
-        height: MediaQuery.sizeOf(sheet).height * .7,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-          children: [
-            Text(
-              '${number(m.weight, 2)} kg',
-              style: Theme.of(sheet).textTheme.headlineLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(dateLabel(m.time)),
-            const SizedBox(height: 8),
-            Text(
-              m.source == 'scale'
-                  ? 'Von deiner Sanitas-Waage'
-                  : 'Manuell eingetragen · BMI berechnet',
-            ),
-            const Divider(),
-            for (final metric in Metric.values)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(metric.label),
-                trailing: Text(
-                  m.values[metric] == null
-                      ? 'Nicht verfügbar'
-                      : '${number(m.values[metric]!, metric.digits)} ${metric.unit}',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-            if (m.note.isNotEmpty) ...[const Divider(), Text(m.note)],
-            const Divider(),
-            TextButton.icon(
-              icon: const Icon(Icons.delete_outline),
-              label: const Text('Messung löschen'),
-              onPressed: () async {
-                final yes = await showDialog<bool>(
-                  context: sheet,
-                  builder: (dialog) => AlertDialog(
-                    title: const Text('Messung löschen?'),
-                    content: const Text(
-                      'Dieser Eintrag wird aus deiner lokalen Historie entfernt.',
+    showDragHandle: false,
+    builder: (sheet) => GlassSheet(
+      child: SafeArea(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(sheet).height * .7,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Messung',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(dialog, false),
-                        child: const Text('Abbrechen'),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.pop(dialog, true),
-                        child: const Text('Löschen'),
-                      ),
-                    ],
                   ),
-                );
-                if (yes == true && sheet.mounted) {
-                  await guarded(sheet, () async {
-                    await c.removeMeasurement(m.id);
-                    if (sheet.mounted) Navigator.pop(sheet);
-                  });
-                }
-              },
-            ),
-          ],
+                  IconButton(
+                    tooltip: 'Schließen',
+                    icon: const Icon(CupertinoIcons.xmark_circle_fill),
+                    onPressed: () => Navigator.pop(sheet),
+                  ),
+                ],
+              ),
+              Text(
+                '${number(m.weight, 2)} kg',
+                style: Theme.of(sheet).textTheme.headlineLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(dateLabel(m.time)),
+              const SizedBox(height: 8),
+              Text(
+                m.source == 'scale'
+                    ? 'Von deiner Sanitas-Waage'
+                    : 'Manuell eingetragen · BMI berechnet',
+              ),
+              const Divider(),
+              for (final metric in Metric.values)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(metric.label),
+                  trailing: Text(
+                    m.values[metric] == null
+                        ? 'Nicht verfügbar'
+                        : '${number(m.values[metric]!, metric.digits)} ${metric.unit}',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              if (m.note.isNotEmpty) ...[const Divider(), Text(m.note)],
+              const Divider(),
+              TextButton.icon(
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Messung löschen'),
+                onPressed: () async {
+                  final yes = await showDialog<bool>(
+                    context: sheet,
+                    builder: (dialog) => AlertDialog(
+                      title: const Text('Messung löschen?'),
+                      content: const Text(
+                        'Dieser Eintrag wird aus deiner lokalen Historie entfernt.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialog, false),
+                          child: const Text('Abbrechen'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(dialog, true),
+                          child: const Text('Löschen'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (yes == true && sheet.mounted) {
+                    await guarded(sheet, () async {
+                      await c.removeMeasurement(m.id);
+                      if (sheet.mounted) Navigator.pop(sheet);
+                    });
+                  }
+                },
+              ),
+            ],
+          ),
         ),
       ),
     ),
   );
 
+  Widget _settingRow({
+    Widget? leading,
+    required Widget title,
+    Widget? subtitle,
+    Widget? trailing,
+    VoidCallback? onTap,
+  }) {
+    final icon = leading is Icon ? leading.icon : null;
+    final color = switch (icon) {
+      Icons.bluetooth_rounded || Icons.help_outline => const Color(0xff0a84ff),
+      Icons.person_add_alt_1_outlined => const Color(0xffff9f0a),
+      Icons.save_alt_rounded => const Color(0xff40c8e0),
+      Icons.restore_page_outlined => const Color(0xffbf5af2),
+      Icons.table_chart_outlined => const Color(0xff30d158),
+      _ => const Color(0xff8e8e93),
+    };
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(width: .5, color: Theme.of(context).dividerColor),
+        ),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        leading: leading == null
+            ? null
+            : Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: IconTheme(
+                  data: const IconThemeData(size: 17, color: Colors.white),
+                  child: leading,
+                ),
+              ),
+        title: title,
+        subtitle: subtitle,
+        trailing:
+            trailing ?? const Icon(CupertinoIcons.chevron_right, size: 13),
+        onTap: onTap,
+      ),
+    );
+  }
+
   Widget _settings() {
     final p = c.profile!;
     return ListView(
       key: const PageStorageKey('settings'),
-      padding: const EdgeInsets.fromLTRB(22, 20, 22, 32),
+      padding: const EdgeInsets.fromLTRB(16, 64, 16, 140),
       children: [
         Text(
           'Dein Weg. Dein Ziel.',
           style: Theme.of(context).textTheme.headlineLarge,
         ),
         const SizedBox(height: 24),
-        Panel(
+        GlassSurface(
+          prominent: true,
+          radius: 30,
+          padding: const EdgeInsets.all(18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(p.name, style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 8),
-              Text('${p.heightCm} cm · Waagenkürzel ${p.initials}'),
-              const SizedBox(height: 24),
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 30,
+                    backgroundColor: lime,
+                    child: Text(
+                      p.initials,
+                      style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w700,
+                        color: forest,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          p.name,
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${p.heightCm} cm · Waagenkürzel ${p.initials}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 14),
+                child: Divider(height: 1),
+              ),
               Text(
                 'ZIELGEWICHT',
                 style: TextStyle(
-                  letterSpacing: 1.6,
-                  fontSize: 10,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               Text(
                 '${number(p.goalKg)} kg',
                 style: Theme.of(context).textTheme.headlineLarge,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 10),
               OutlinedButton.icon(
                 onPressed: () => editProfile(p),
-                icon: const Icon(Icons.edit_outlined),
+                icon: const Icon(CupertinoIcons.pencil, size: 16),
                 label: const Text('Profil & Ziel bearbeiten'),
               ),
             ],
           ),
         ),
-        const SectionTitle('So passt es zu dir'),
+        const SectionTitle('So passt es zu dir', compact: true),
         Panel(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+          padding: EdgeInsets.zero,
           child: Column(
             children: [
               SwitchListTile(
@@ -962,7 +1404,7 @@ class _HomeState extends State<Home> {
                 value: c.autoConnect,
                 onChanged: (v) => guarded(context, () => c.setAutoConnect(v)),
               ),
-              ListTile(
+              _settingRow(
                 title: const Text('Darstellung'),
                 trailing: DropdownButton<ThemeMode>(
                   value: c.themeMode,
@@ -984,13 +1426,13 @@ class _HomeState extends State<Home> {
                   onChanged: (v) => guarded(context, () => c.setTheme(v!)),
                 ),
               ),
-              ListTile(
+              _settingRow(
                 leading: const Icon(Icons.person_add_alt_1_outlined),
                 title: const Text('Weiteres Profil'),
                 subtitle: const Text('Getrennte Ziele und Messungen'),
                 onTap: () => editProfile(),
               ),
-              ListTile(
+              _settingRow(
                 leading: const Icon(Icons.bluetooth_rounded),
                 title: const Text('Waage'),
                 subtitle: Text(p.deviceName ?? 'Noch nicht verbunden'),
@@ -998,7 +1440,7 @@ class _HomeState extends State<Home> {
                 onTap: _showScale,
               ),
               if (p.deviceId != null)
-                ListTile(
+                _settingRow(
                   leading: const Icon(Icons.link_off_rounded),
                   title: const Text('Waagenzuordnung lösen'),
                   subtitle: const Text('Messungen bleiben erhalten.'),
@@ -1010,12 +1452,12 @@ class _HomeState extends State<Home> {
             ],
           ),
         ),
-        const SectionTitle('Deine Daten gehören dir'),
+        const SectionTitle('Deine Daten gehören dir', compact: true),
         Panel(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: EdgeInsets.zero,
           child: Column(
             children: [
-              ListTile(
+              _settingRow(
                 leading: const Icon(Icons.save_alt_rounded),
                 title: const Text('Sicherung speichern'),
                 subtitle: const Text('Alle Profile & Messungen als JSON'),
@@ -1026,7 +1468,7 @@ class _HomeState extends State<Home> {
                   }
                 }),
               ),
-              ListTile(
+              _settingRow(
                 leading: const Icon(Icons.restore_page_outlined),
                 title: const Text('Sicherung wiederherstellen'),
                 subtitle: const Text(
@@ -1039,7 +1481,7 @@ class _HomeState extends State<Home> {
                   }
                 }),
               ),
-              ListTile(
+              _settingRow(
                 leading: const Icon(Icons.table_chart_outlined),
                 title: const Text('CSV exportieren'),
                 subtitle: const Text(
@@ -1058,17 +1500,17 @@ class _HomeState extends State<Home> {
           'Die App benötigt kein Konto und überträgt keine Daten an einen Server. Sichere deine Daten vor einem Handywechsel oder einer Deinstallation.',
           style: TextStyle(fontSize: 12, height: 1.5),
         ),
-        const SectionTitle('Hilfe & Informationen'),
+        const SectionTitle('Hilfe & Informationen', compact: true),
         Panel(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: EdgeInsets.zero,
           child: Column(
             children: [
-              ListTile(
+              _settingRow(
                 leading: const Icon(Icons.help_outline),
                 title: const Text('Verbinden & messen'),
                 onTap: _showScale,
               ),
-              ListTile(
+              _settingRow(
                 leading: const Icon(Icons.bug_report_outlined),
                 title: const Text('Bluetooth-Diagnose speichern'),
                 subtitle: const Text(
@@ -1083,7 +1525,7 @@ class _HomeState extends State<Home> {
                   if (saved && mounted) toast(context, 'Diagnose gespeichert.');
                 }),
               ),
-              ListTile(
+              _settingRow(
                 leading: const Icon(Icons.info_outline),
                 title: const Text('Über HealthCoach'),
                 subtitle: const Text(

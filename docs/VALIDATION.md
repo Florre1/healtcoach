@@ -1,5 +1,23 @@
 # Prüfstand
 
+## Version 1.1.0
+
+- Glass-Redesign aus dem gelieferten ZIP-Handoff umgesetzt; Details in
+  [DESIGN.md](DESIGN.md), einschließlich Importweg und Grenzen der Vorlage.
+- 58 automatisierte Tests erfolgreich. Neue Oberflächentests prüfen alle vier
+  Tabs mit 360 dp Breite und 130% Schriftgröße in Hell und Dunkel.
+- Codeanalyse ohne Befunde.
+- Android-Integrationstest auf API 34 mit realen Formularen, manueller Messung,
+  Diagrammen, Messdetails, Profiltrennung und Speicherung erfolgreich.
+- Gerenderte Ansichten visuell geprüft. Der Emulator benötigt für stabile
+  Screenshot-Erfassung Software-GLES und `--no-enable-impeller`; die produktive
+  Renderer-Konfiguration bleibt unverändert.
+- Ein Test des neuen Designs auf dem Samsung A17 ist weiterhin erforderlich.
+- Release-APK 1.1.0 (Build 3) signiert, Signatur identisch mit 1.0.1 geprüft;
+  ARM32, ARM64 und x86-64 enthalten, Android 8+.
+- Installation als Update über signierte Version 1.0.1 und Start der Release-App
+  im eigenen Emulator erfolgreich.
+
 ## Version 1.0.1
 
 - 56 erfolgreiche automatisierte Tests, einschließlich simulierter BLE-Abbrüche,

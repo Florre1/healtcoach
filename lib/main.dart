@@ -10,10 +10,14 @@ import 'app_controller.dart';
 import 'data/repository.dart';
 import 'ui/home.dart';
 import 'ui/theme.dart';
+import 'ui/glass.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   LicenseRegistry.addLicense(() async* {
+    yield LicenseEntryWithLineBreaks([
+      'Inter',
+    ], await rootBundle.loadString('assets/fonts/OFL.txt'));
     yield LicenseEntryWithLineBreaks(
       ['HealthCoach / openScale protocol'],
       '${await rootBundle.loadString('THIRD_PARTY_NOTICES.md')}\n\n${await rootBundle.loadString('LICENSE')}',
@@ -88,6 +92,7 @@ class _HealthCoachAppState extends State<HealthCoachApp>
       theme: appTheme(Brightness.light),
       darkTheme: appTheme(Brightness.dark),
       themeMode: widget.controller.themeMode,
+      builder: (context, child) => GlassBackground(child: child!),
       locale: const Locale('de', 'DE'),
       supportedLocales: const [Locale('de', 'DE')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
