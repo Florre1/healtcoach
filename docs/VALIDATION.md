@@ -1,5 +1,16 @@
 # Prüfstand
 
+## Version 1.1.1
+
+- Verbindungs-Sheet wieder mit der Anordnung aus Release 1.0.0: Anleitung,
+  Status, Live-Gewicht, Geräteliste, Suchen/Beenden und Profilhinweis.
+  Glass-Oberfläche und aktuelle BLE-Zustandsmaschine bleiben bestehen.
+- Zusätzliche Schließen-Zeile und doppelte Safe-Area-Einrückung entfernt.
+- Codeanalyse ohne Befunde; gezielte UI-Tests in Hell und Dunkel auf 360 dp
+  mit 130% Schriftgröße prüfen das Öffnen und Bedienen des Sheets.
+- Signierte APK 1.1.1 (Build 4) geprüft und als Update über 1.1.0 auf dem
+  eigenen Android-Emulator installiert und gestartet.
+
 ## Version 1.1.0
 
 - Glass-Redesign aus dem gelieferten ZIP-Handoff umgesetzt; Details in

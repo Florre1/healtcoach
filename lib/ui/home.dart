@@ -669,108 +669,94 @@ class _HomeState extends State<Home> {
       isScrollControlled: true,
       showDragHandle: false,
       builder: (sheet) => GlassSheet(
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-            child: ListenableBuilder(
-              listenable: c.scale,
-              builder: (context, _) {
-                final s = c.scale;
-                return SizedBox(
-                  height: MediaQuery.sizeOf(context).height * .68,
-                  child: ListView(
-                    children: [
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: IconButton(
-                          tooltip: 'Schließen',
-                          icon: const Icon(CupertinoIcons.xmark_circle_fill),
-                          onPressed: () => Navigator.pop(sheet),
-                        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+          child: ListenableBuilder(
+            listenable: c.scale,
+            builder: (context, _) {
+              final s = c.scale;
+              return SizedBox(
+                height: MediaQuery.sizeOf(context).height * .68,
+                child: ListView(
+                  children: [
+                    Text(
+                      'Deine Waage verbinden',
+                      style: Theme.of(context).textTheme.headlineMedium,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      '1. Bluetooth am Handy einschalten.\n2. Sanitas-App vollständig schließen.\n3. Waage kurz antippen und hier verbinden.\n4. Nach „Bereit“ barfuß aufsteigen.',
+                      style: TextStyle(height: 1.7),
+                    ),
+                    const SizedBox(height: 18),
+                    Panel(
+                      child: Text(
+                        s.message,
+                        style: const TextStyle(height: 1.5),
                       ),
-                      Text(
-                        'Deine Waage verbinden',
-                        style: Theme.of(context).textTheme.headlineMedium,
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        '1. Bluetooth am Handy einschalten.\n2. Sanitas-App vollständig schließen.\n3. Waage kurz antippen und hier verbinden.\n4. Nach „Bereit“ barfuß aufsteigen.',
-                        style: TextStyle(height: 1.7),
-                      ),
-                      const SizedBox(height: 18),
-                      Panel(
+                    ),
+                    if (s.liveWeight != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
                         child: Text(
-                          s.message,
-                          style: const TextStyle(height: 1.5),
+                          '${number(s.liveWeight!, 2)} kg',
+                          style: Theme.of(context).textTheme.headlineLarge,
+                          textAlign: TextAlign.center,
                         ),
                       ),
-                      if (s.liveWeight != null)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          child: Text(
-                            '${number(s.liveWeight!, 2)} kg',
-                            style: Theme.of(context).textTheme.headlineLarge,
-                            textAlign: TextAlign.center,
-                          ),
+                    const SizedBox(height: 16),
+                    if (s.working) const LinearProgressIndicator(),
+                    for (final device in s.devices.values)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.monitor_weight_outlined),
+                        title: Text(
+                          device.name.isEmpty ? 'Sanitas SBF 70' : device.name,
                         ),
-                      const SizedBox(height: 16),
-                      if (s.working) const LinearProgressIndicator(),
-                      for (final device in s.devices.values)
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.monitor_weight_outlined),
-                          title: Text(
-                            device.name.isEmpty
-                                ? 'Sanitas SBF 70'
-                                : device.name,
-                          ),
-                          subtitle: Text('Signal ${device.rssi} dBm'),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap:
-                              [
-                                ConnectionPhase.scanning,
-                                ConnectionPhase.idle,
-                                ConnectionPhase.error,
-                              ].contains(s.phase)
-                              ? () => guarded(
-                                  context,
-                                  () => s.connect(c.profile!, device),
-                                )
-                              : null,
-                        ),
-                      const SizedBox(height: 18),
-                      FilledButton.icon(
-                        onPressed: () => guarded(context, () async {
-                          if (s.busy) {
-                            await s.disconnect();
-                          } else {
-                            await s.scan(c.profile!);
-                          }
-                        }),
-                        icon: Icon(
-                          s.busy ? Icons.close_rounded : Icons.search_rounded,
-                        ),
-                        label: Text(
-                          s.busy
-                              ? 'Verbindung / Suche beenden'
-                              : 'Waage suchen',
-                        ),
+                        subtitle: Text('Signal ${device.rssi} dBm'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap:
+                            [
+                              ConnectionPhase.scanning,
+                              ConnectionPhase.idle,
+                              ConnectionPhase.error,
+                            ].contains(s.phase)
+                            ? () => guarded(
+                                context,
+                                () => s.connect(c.profile!, device),
+                              )
+                            : null,
                       ),
-                      if (s.phase == ConnectionPhase.error)
-                        TextButton(
-                          onPressed: openAppSettings,
-                          child: const Text('Android-App-Einstellungen öffnen'),
-                        ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Beim ersten Mal wird dein Profil auf der Waage eingerichtet oder anhand deiner Angaben zugeordnet. Bereits vorhandene Messungen vor deinem App-Start werden nicht importiert.',
-                        style: TextStyle(fontSize: 12, height: 1.5),
+                    const SizedBox(height: 18),
+                    FilledButton.icon(
+                      onPressed: () => guarded(context, () async {
+                        if (s.busy) {
+                          await s.disconnect();
+                        } else {
+                          await s.scan(c.profile!);
+                        }
+                      }),
+                      icon: Icon(
+                        s.busy ? Icons.close_rounded : Icons.search_rounded,
                       ),
-                    ],
-                  ),
-                );
-              },
-            ),
+                      label: Text(
+                        s.busy ? 'Verbindung / Suche beenden' : 'Waage suchen',
+                      ),
+                    ),
+                    if (s.phase == ConnectionPhase.error)
+                      TextButton(
+                        onPressed: openAppSettings,
+                        child: const Text('Android-App-Einstellungen öffnen'),
+                      ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Beim ersten Mal wird dein Profil auf der Waage eingerichtet oder anhand deiner Angaben zugeordnet. Bereits vorhandene Messungen vor deinem App-Start werden nicht importiert.',
+                      style: TextStyle(fontSize: 12, height: 1.5),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ),
       ),

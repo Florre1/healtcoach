@@ -94,8 +94,16 @@ void main() {
         await tester.tap(find.byTooltip('Waage verbinden').first);
         await tester.pumpAndSettle();
         expect(find.text('Deine Waage verbinden'), findsOneWidget);
+        expect(
+          find.textContaining('1. Bluetooth am Handy einschalten.'),
+          findsOneWidget,
+        );
+        await screenshot('Waage');
+        await tester.ensureVisible(find.text('Waage suchen'));
+        await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
-        await tester.tap(find.byTooltip('Schließen').last);
+        // Original connection sheet closes by drag, backdrop or Android back.
+        Navigator.of(tester.element(find.text('Deine Waage verbinden'))).pop();
         await tester.pumpAndSettle();
         await tester.tap(find.text('Profil').last);
         await tester.pumpAndSettle();

@@ -40,7 +40,7 @@ Voraussetzung: Android **8.0 oder neuer**. Für die Waage wird Bluetooth Low Ene
 benötigt. Die APK enthält ARM32, ARM64 und x86-64. Eine Unterstützung jedes
 Handymodells ist ohne Gerätetests nicht garantiert.
 
-1. Die signierte `healthcoach-1.1.0.apk` aus dem [GitHub-Release](https://github.com/Florre1/healtcoach/releases/tag/v1.1.0) herunterladen. Bestehende Installationen direkt aktualisieren.
+1. Die signierte `healthcoach-1.1.1.apk` aus dem [GitHub-Release](https://github.com/Florre1/healtcoach/releases/tag/v1.1.1) herunterladen. Bestehende Installationen direkt aktualisieren.
 2. Auf dem Android-Handy öffnen und die Installation aus dieser Quelle erlauben.
 3. Profil anlegen: Name, Waagenkürzel, Geburtsdatum, Größe, Geschlecht,
    Aktivitätsniveau und Zielgewicht. Diese Angaben gehen an die Waage, nicht an
