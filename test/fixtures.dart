@@ -45,7 +45,7 @@ void handshake(SanitasProtocol protocol) {
 }
 
 List<int> remoteUserFrame({
-  String id = '0000000000000065',
+  String id = appSlotId,
   String name = 'TST',
   int count = 1,
   int index = 1,
@@ -73,9 +73,11 @@ List<int> detailsFrame({int day = 15, int height = 180}) => [
   0x82,
 ];
 
+const updateAck = [0xe7, 0xf0, 0x35, 0];
+
 void existingUser(SanitasProtocol protocol) {
   handshake(protocol);
   protocol.receive([0xe7, 0xf0, 0x33, 0, 1, 8]);
   protocol.receive(remoteUserFrame());
-  protocol.receive(detailsFrame());
+  protocol.receive(updateAck);
 }

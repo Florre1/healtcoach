@@ -1,5 +1,26 @@
 # Prüfstand
 
+## Version 1.2.0
+
+Geprüft am 2. November 2026.
+
+- Alle 62 automatisierten Tests erfolgreich, einschließlich fremder
+  Waagen-Benutzerkennungen bei Live-Messungen, des gemeinsamen HealthCoach-Platzes,
+  wiederholter Synchronisierung nach Profilwechsel sowie alter Messungskennungen
+  und Löschmarkierungen bei Speicherung und Sicherungsimport.
+- `flutter analyze`: keine Befunde. Dart-Formatprüfung erfolgreich.
+- Android-Integrationstest auf API 34 erfolgreich: Profilformular, manuelle
+  Messung, Diagramme, Profiltrennung, Sicherungsabgleich und Datenpersistenz.
+- Signierte Release-APK 1.2.0 (Build 5) gebaut, Signatur mit `apksigner` geprüft
+  und identisch mit 1.1.1. Android 8+, ARM32/ARM64/x86-64, keine
+  Internet-Berechtigung im Release-Manifest.
+- Installation als Update über die signierte 1.1.1 und Kaltstart auf dem
+  API-34-Emulator erfolgreich.
+- Vorherige GitHub-Läufe scheiterten vor den Prüfungen am entfernten SDK-Paket
+  `tools`. Der Android-Setup-Schritt installiert jetzt explizit `platform-tools`.
+- Review und verbleibende Grenzen: [CODE_REVIEW_1.2.0.md](CODE_REVIEW_1.2.0.md).
+- Die echte SBF 70 S-A und das Samsung A17 sind weiterhin nicht geprüft.
+
 ## Version 1.1.1
 
 - Verbindungs-Sheet wieder mit der Anordnung aus Release 1.0.0: Anleitung,

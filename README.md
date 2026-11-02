@@ -13,12 +13,13 @@ Verläufe für Gewicht und Körperanalyse. Entwickelt für VS Code.
 
 ## Funktionen
 
-- Profile mit individuellen Zielen, getrennten Messungen und Waagenzuordnung.
+- Profile mit individuellen Zielen und getrennten Messungen. Jede Messung wird
+  dem Profil gespeichert, das gerade in der App geöffnet ist.
 - Tagesübersicht, Zielabstand und Gewichtsdiagramm.
 - Diagramme für Gewicht, BMI, Körperfett, Körperwasser, Muskeln, Knochenmasse,
   BMR (Grundumsatz), AMR (Aktivitätsumsatz) und elektrische Impedanz.
 - 7/30/90 Tage oder gesamter Verlauf; letzter verfügbarer Wert je Kalendertag.
-- Bluetooth-Suche, Profilprüfung/-anlage, Uhrzeitsynchronisierung,
+- Bluetooth-Suche, eigener HealthCoach-Benutzerplatz auf der Waage, Uhrzeitsynchronisierung,
   Live-Anzeige und Abruf gespeicherter Messungen seit Einrichtung des App-Profils.
 - Wiederverbindung beim Öffnen der App (abschaltbar). Keine Hintergrundsuche.
 - Manuelle Messungen, optionale Körperwerte und Notizen, Löschung mit Bestätigung.
@@ -40,13 +41,15 @@ Voraussetzung: Android **8.0 oder neuer**. Für die Waage wird Bluetooth Low Ene
 benötigt. Die APK enthält ARM32, ARM64 und x86-64. Eine Unterstützung jedes
 Handymodells ist ohne Gerätetests nicht garantiert.
 
-1. Die signierte `healthcoach-1.1.1.apk` aus dem [GitHub-Release](https://github.com/Florre1/healtcoach/releases/tag/v1.1.1) herunterladen. Bestehende Installationen direkt aktualisieren.
+1. Die signierte `healthcoach-1.2.0.apk` aus dem [GitHub-Release](https://github.com/Florre1/healtcoach/releases/tag/v1.2.0) herunterladen. Bestehende Installationen direkt aktualisieren.
 2. Auf dem Android-Handy öffnen und die Installation aus dieser Quelle erlauben.
 3. Profil anlegen: Name, Waagenkürzel, Geburtsdatum, Größe, Geschlecht,
    Aktivitätsniveau und Zielgewicht. Diese Angaben gehen an die Waage, nicht an
    einen Server.
-4. Falls bereits ein Waagenprofil existiert: dessen Kürzel (bis drei Zeichen),
-   Geburtstag und Geschlecht verwenden. Identitätskonflikte werden nicht überschrieben.
+4. Bestehende Waagenprofile (z. B. aus der Sanitas-App) müssen nicht übernommen
+   werden. HealthCoach legt einmalig einen eigenen Benutzerplatz auf der Waage an
+   und schreibt vor jeder Messung die Daten des aktiven Profils hinein. Andere
+   Benutzer auf der Waage werden weder verglichen noch verändert.
 5. Bluetooth einschalten, die Sanitas-App vollständig schließen, die Waage kurz
    antippen und in HealthCoach auf die Waagenkarte → **Waage suchen** tippen.
 6. Die SBF 70 auswählen und die Android-Bluetooth-Freigabe erteilen. Auf älteren
@@ -64,10 +67,12 @@ Trennen beendet die Wiederholungen. „Bereit“ erscheint erst nach Bestätigun
 der Waage. Unvollständige oder widersprüchliche Datenpakete werden verworfen;
 verspätete Rückmeldungen alter Verbindungen beeinflussen keine neue Sitzung.
 
-Wird außerhalb der App gewogen, können dem passenden Waagenprofil zugeordnete,
-noch gespeicherte Messungen beim nächsten Verbinden nachgeladen werden. Unbekannte
-Waagenmessungen werden nicht automatisch einer Person zugeordnet. Vor dem Start
-des App-Profils entstandene Werte werden nicht importiert.
+Jede vollständige Messung wird dem Profil gespeichert, das beim Wiegen in der App
+aktiv ist – unabhängig davon, welchem Benutzer die Waage sie intern zuordnet.
+Messungen, die die Waage auf dem HealthCoach-Platz gespeichert hat (z. B. ohne
+offene App), lädt die App beim nächsten Verbinden in das dann aktive Profil.
+Jede Messung wird nur einmal übernommen. Vor dem Start des App-Profils
+entstandene Werte werden nicht importiert.
 
 Fehlende Körperwerte erscheinen als „nicht verfügbar“. Bei manuellen Einträgen
 wird nur der BMI aus dem Gewicht und der zum Eintragszeitpunkt gespeicherten Größe

@@ -750,7 +750,7 @@ class _HomeState extends State<Home> {
                       ),
                     const SizedBox(height: 12),
                     const Text(
-                      'Beim ersten Mal wird dein Profil auf der Waage eingerichtet oder anhand deiner Angaben zugeordnet. Bereits vorhandene Messungen vor deinem App-Start werden nicht importiert.',
+                      'Messungen werden im aktuell geöffneten App-Profil gespeichert, unabhängig vom Waagenprofil. HealthCoach nutzt einen eigenen Benutzerplatz. Messungen vor deinem App-Start werden nicht importiert.',
                       style: TextStyle(fontSize: 12, height: 1.5),
                     ),
                   ],

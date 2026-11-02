@@ -44,11 +44,11 @@ void main() {
     expect(error.retryable, isTrue);
     expect(p.phase, 'error');
   });
-  test('live data cannot bypass identity verification', () {
+  test('live data is ignored until the scale confirmed measurement start', () {
     handshake(p);
     p.receive([0xe7, 0xf0, 0x33, 0, 1, 8]);
     p.receive(remoteUserFrame());
-    expect(p.phase, 'details');
+    expect(p.phase, 'update');
     expect(
       [
         liveHeader,
@@ -108,7 +108,7 @@ void main() {
       p.receive(remoteUserFrame());
       final again = p.receive(remoteUserFrame());
       expect(again.whereType<SendFrame>().single.bytes[1], 0xf1);
-      expect(p.phase, 'details');
+      expect(p.phase, 'update');
     },
   );
   test('changed user count is rejected before any profile is created', () {

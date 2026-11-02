@@ -103,7 +103,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         // Original connection sheet closes by drag, backdrop or Android back.
-        Navigator.of(tester.element(find.text('Deine Waage verbinden'))).pop();
+        Navigator.of(tester.element(find.text('Waage suchen'))).pop();
         await tester.pumpAndSettle();
         await tester.tap(find.text('Profil').last);
         await tester.pumpAndSettle();

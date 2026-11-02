@@ -87,7 +87,7 @@ void main() {
         expect(add, [
           0xe7,
           0x31,
-          ...idBytes('0000000000000065'),
+          ...idBytes(appSlotId),
           ...'TST'.codeUnits,
           95,
           5,
@@ -102,24 +102,48 @@ void main() {
           protocol.receive([0xe7, 0xf0, 0x40, 0]).whereType<ScaleReady>(),
           hasLength(1),
         );
-        expect(
-          ready.whereType<ScaleBound>().single.remoteId,
-          '0000000000000065',
-        );
+        expect(ready.whereType<ScaleBound>().single.remoteId, appSlotId);
       },
     );
-    test('verifies full birth date before using matching initials/year', () {
+    test('writes active profile into app slot without comparing it', () {
       handshake(protocol);
       protocol.receive([0xe7, 0xf0, 0x33, 0, 1, 8]);
-      protocol.receive(remoteUserFrame());
-      final out = protocol.receive(detailsFrame(day: 16));
-      expect(out.whereType<ScaleMessage>().single.error, isTrue);
-      expect(out.whereType<SendFrame>(), isEmpty);
+      final out = protocol.receive(remoteUserFrame(name: 'ABC', year: 1970));
+      expect(out.whereType<ScaleMessage>().where((m) => m.error), isEmpty);
+      expect(out.whereType<SendFrame>().last.bytes, [
+        0xe7,
+        0x35,
+        ...idBytes(appSlotId),
+        ...'TST'.codeUnits,
+        95,
+        5,
+        15,
+        180,
+        0x82,
+      ]);
+      final next = protocol.receive(updateAck);
+      expect(next.whereType<ScaleBound>().single.remoteId, appSlotId);
+      expect(next.whereType<SendFrame>().single.bytes.sublist(0, 2), [
+        0xe7,
+        0x41,
+      ]);
     });
-    test('refuses to overwrite another person with the same initials', () {
+    test('leaves other scale users untouched and avoids their initials', () {
       handshake(protocol);
       protocol.receive([0xe7, 0xf0, 0x33, 0, 1, 8]);
-      final out = protocol.receive(remoteUserFrame(year: 1994));
+      final out = protocol.receive(
+        remoteUserFrame(id: '0000000000000065', year: 1994),
+      );
+      expect(out.whereType<ScaleMessage>().where((m) => m.error), isEmpty);
+      final add = out.whereType<SendFrame>().last.bytes;
+      expect(add.sublist(0, 2), [0xe7, 0x31]);
+      expect(add.sublist(2, 10), idBytes(appSlotId));
+      expect(add.sublist(10, 13), [...'HC'.codeUnits, 0]);
+    });
+    test('full scale without app slot reports a clear error', () {
+      handshake(protocol);
+      protocol.receive([0xe7, 0xf0, 0x33, 0, 1, 1]);
+      final out = protocol.receive(remoteUserFrame(id: '0000000000000065'));
       expect(out.whereType<ScaleMessage>().single.error, isTrue);
       expect(
         out.whereType<SendFrame>().any((e) => e.bytes[1] == 0x31),
@@ -174,23 +198,20 @@ void main() {
       expect(out.whereType<ScaleReading>(), isEmpty);
       expect(out.whereType<ScaleMessage>().single.error, isTrue);
     });
-    test('does not assign a different remote user live measurement to active profile', () {
+    test('assigns any complete live measurement to the active profile', () {
       existingUser(protocol);
       protocol.receive([0xe7, 0xf0, 0x41, 0, 0]);
       protocol.receive([0xe7, 0xf0, 0x40, 0]);
       final data = measurementPacket();
       protocol.receive([0xe7, 0x59, 3, 1, 1, ...idBytes('0000000000000099')]);
       protocol.receive([0xe7, 0x59, 3, 2, ...data.take(11)]);
-      expect(
-        protocol.receive([
-          0xe7,
-          0x59,
-          3,
-          3,
-          ...data.skip(11),
-        ]).whereType<ScaleReading>(),
-        isEmpty,
-      );
+      final reading = protocol
+          .receive([0xe7, 0x59, 3, 3, ...data.skip(11)])
+          .whereType<ScaleReading>()
+          .single
+          .measurement;
+      expect(reading.profileId, testProfile().id);
+      expect(reading.weight, 80);
     });
     test(
       'live frames save exactly once and raw live weight is not persisted',

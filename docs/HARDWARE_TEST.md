@@ -4,9 +4,10 @@ Dieser Schritt kann im Emulator nicht ersetzt werden. Stand: noch nicht an der
 Waage des Nutzers geprüft. Keine Waage zurücksetzen und keine alten Profile löschen.
 
 1. Release-APK auf dem Samsung A17 installieren. Android-Version notieren.
-2. In der bisherigen App vorhandenes Waagenkürzel und Profildaten prüfen,
-   Hersteller-App dann vollständig schließen. In HealthCoach identische Angaben
-   eintragen, um den bestehenden Benutzerplatz wiederzuverwenden.
+2. Hersteller-App vollständig schließen. In HealthCoach die eigenen Körperdaten
+   eintragen und das gewünschte App-Profil öffnen. Ein Abgleich mit vorhandenen
+   Waagenprofilen ist nicht nötig. HealthCoach benötigt einmalig einen freien
+   Benutzerplatz; vorhandene Benutzer werden nicht verändert.
 3. Bluetooth-/Gerätefreigabe erlauben. Waage aktivieren und suchen.
    Erwartung: „SANITAS SBF70“ erscheint, lässt sich verbinden und zeigt „Bereit“.
 4. Barfuß vollständig messen. Gewicht, Körperfett, Wasser, Muskeln, Knochenmasse,
@@ -14,11 +15,15 @@ Waage des Nutzers geprüft. Keine Waage zurücksetzen und keine alten Profile l�
    BMR/AMR in kcal und BMI mit einer Nachkommastelle kontrollieren.
 5. App schließen und neu öffnen: Messung bleibt erhalten.
 6. Erneut verbinden: derselbe Messzeitpunkt erzeugt keinen zweiten Eintrag.
-7. Eine Messung ohne geöffnete App durchführen, dann verbinden: korrekt dem
-   Profil zugeordnete gespeicherte Messung wird nachgeladen.
+7. Eine Messung ohne geöffnete App auf dem HealthCoach-Benutzerplatz durchführen,
+   dann verbinden: Die gespeicherte Messung wird in das jetzt geöffnete App-Profil
+   geladen. Messungen anderer Benutzerplätze werden nicht aus deren Speicher gelesen.
 8. Bluetooth ausschalten / Freigabe verweigern: verständlicher Hinweis,
    gespeicherte Daten bleiben bedienbar. Bluetooth wieder einschalten und erneut suchen.
-9. Optional ein zweites Profil testen: Werte dürfen nicht beim falschen Profil landen.
+9. Ein zweites App-Profil öffnen und erneut verbinden: Bereits importierte Werte
+   bleiben im ersten Profil. Eine neue Live-Messung landet ausschließlich im jetzt
+   geöffneten Profil, auch wenn die Waage einen anderen Benutzer meldet. Bei gleichem
+   Kürzel wie ein bestehender Waagenbenutzer muss HealthCoach auf HC/HC1… ausweichen.
 10. JSON-Sicherung und CSV exportieren. Eine Wiederherstellung derselben Sicherung
     darf keine Duplikate erzeugen.
 

@@ -18,6 +18,54 @@ void main() {
     await repo.saveProfile(testProfile());
   });
   tearDown(() => repo.db.close());
+  for (final deleted in [false, true]) {
+    test('legacy scale IDs remain deduplicated (deleted: $deleted)', () async {
+      final current = decodeMeasurement(
+        measurementPacket(),
+        testProfile(),
+        now: testTime,
+      );
+      final legacy = Map<String, dynamic>.from(current.toJson());
+      legacy['id'] =
+          'scale:${current.profileId}:${current.time.millisecondsSinceEpoch ~/ 1000}';
+      await repo.db.insert('measurements', {
+        'id': legacy['id'],
+        'profile_id': current.profileId,
+        'timestamp': current.time.millisecondsSinceEpoch,
+        'data': jsonEncode(legacy),
+      });
+      if (deleted) await repo.deleteMeasurement(legacy['id'] as String);
+      expect(await repo.saveMeasurement(current), isFalse);
+      final backup = jsonDecode(await repo.backup()) as Map<String, dynamic>;
+      backup['measurements'] = [current.toJson()];
+      expect(await repo.restore(jsonEncode(backup)), 0);
+      expect(
+        await repo.measurements(current.profileId),
+        hasLength(deleted ? 0 : 1),
+      );
+    });
+  }
+  test(
+    'shared slot history stays on the first receiving app profile',
+    () async {
+      await repo.saveProfile(testProfile(id: 'profile-2'));
+      final first = decodeMeasurement(
+        measurementPacket(),
+        testProfile(),
+        now: testTime,
+      );
+      final second = decodeMeasurement(
+        measurementPacket(),
+        testProfile(id: 'profile-2'),
+        now: testTime,
+      );
+      expect(await repo.saveMeasurement(first), isTrue);
+      expect(await repo.saveMeasurement(second), isFalse);
+      expect(await repo.measurements('profile-2'), isEmpty);
+      await repo.deleteMeasurement(first.id);
+      expect(await repo.saveMeasurement(second), isFalse);
+    },
+  );
   test(
     'concurrent repeated sync is idempotent and profile edits preserve data',
     () async {

@@ -51,20 +51,10 @@ class _ProfileFormState extends State<ProfileForm> {
       return;
     }
     final old = widget.existing;
-    if (widget.controller.profiles.any(
-      (p) =>
-          p.id != old?.id && p.initials == initials.text.trim().toUpperCase(),
-    )) {
-      toast(context, 'Dieses Kürzel wird bereits von einem Profil verwendet.');
-      return;
-    }
     setState(() => saving = true);
     await guarded(context, () async {
-      final identityChanged =
-          old != null &&
-          (old.initials != initials.text.trim().toUpperCase() ||
-              old.birthday != birthday ||
-              old.sex != sex);
+      // Profile data is written to the scale on every connect, so edits never
+      // invalidate the scale binding.
       final p = Profile(
         id: old?.id ?? newId(),
         name: name.text.trim(),
@@ -75,9 +65,9 @@ class _ProfileFormState extends State<ProfileForm> {
         activity: activity,
         goalKg: double.parse(goal.text.replaceAll(',', '.')),
         trackingSince: old?.trackingSince ?? DateTime.now(),
-        deviceId: identityChanged ? null : old?.deviceId,
-        deviceName: identityChanged ? null : old?.deviceName,
-        remoteId: identityChanged ? null : old?.remoteId,
+        deviceId: old?.deviceId,
+        deviceName: old?.deviceName,
+        remoteId: old?.remoteId,
       );
       await widget.controller.saveProfile(p);
       if (mounted) Navigator.pop(context);
@@ -135,7 +125,7 @@ class _ProfileFormState extends State<ProfileForm> {
                   ],
                   decoration: const InputDecoration(
                     labelText: 'Kürzel auf der Waage',
-                    helperText: '1–3 Zeichen, z. B. FLO. Bestehendes Kürzel übernehmen.',
+                    helperText: '1–3 Zeichen, z. B. FLO. Erscheint auf dem Waagendisplay.',
                   ),
                   validator: (s) =>
                       s == null || !RegExp(r'^[a-zA-Z0-9]{1,3}$').hasMatch(s)
@@ -251,7 +241,7 @@ class _ProfileFormState extends State<ProfileForm> {
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  'Beim Verbinden wird dein Profil mit der Waage abgeglichen. Andere Waagenprofile werden nicht gelöscht.',
+                  'Messungen landen im geöffneten App-Profil. HealthCoach nutzt einen eigenen Benutzerplatz auf der Waage; andere Waagenprofile werden nicht verändert.',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12, height: 1.5),
                 ),

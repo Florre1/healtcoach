@@ -288,7 +288,7 @@ class ScaleConnection extends ChangeNotifier {
               _progressDeadline(s);
               _state(
                 ConnectionPhase.synchronizing,
-                'Profil und gespeicherte Messungen werden abgeglichen …',
+                'Waage wird vorbereitet und gespeicherte Messungen werden geladen …',
               );
               _enqueue(s, () => _subscribe(s));
             } else if (update.connectionState ==

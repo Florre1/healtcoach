@@ -138,7 +138,7 @@ void main() {
     receive(time, [0xe7, 0xf0, 0x4f, 0, 90, 20, 20, 1, 0, 0, 0, 1]);
     receive(time, [0xe7, 0xf0, 0x33, 0, 1, 8]);
     receive(time, remoteUserFrame());
-    receive(time, detailsFrame());
+    receive(time, updateAck);
     receive(time, [0xe7, 0xf0, 0x41, 0, 0]);
     expect(scale.phase, ConnectionPhase.synchronizing);
     receive(time, [0xe7, 0xf0, 0x40, 0]);
@@ -590,7 +590,7 @@ void main() {
       receive(time, [0xe7, 0xf0, 0x4f, 0, 90, 20, 20, 1, 0, 0, 0, 1]);
       receive(time, [0xe7, 0xf0, 0x33, 0, 1, 8]);
       receive(time, remoteUserFrame());
-      receive(time, detailsFrame());
+      receive(time, updateAck);
       var disconnected = false;
       unawaited(
         scale.disconnect(quiet: true).then((_) {

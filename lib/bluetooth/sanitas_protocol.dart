@@ -55,6 +55,14 @@ List<int> idBytes(String id) => List.generate(
   8,
   (i) => int.parse(id.substring(i * 2, i * 2 + 2), radix: 16),
 );
+
+/// Fixed user slot that HealthCoach owns on the scale. All app profiles share
+/// it: before each session the active profile's body data is written into it,
+/// and every measurement is stored on the profile that is active in the app.
+/// Other users on the scale (e.g. from the Sanitas app) are never compared,
+/// changed or deleted.
+const appSlotId = '4843000000000001';
+
 int u16(List<int> b, int offset) => (b[offset] << 8) | b[offset + 1];
 List<int> timeBytes(DateTime date) => (ByteData(
   4,
@@ -69,8 +77,8 @@ class SanitasProtocol {
   int capacity = 8;
   List<int>? _savedPart, _livePart;
   int? _savedCount, _userCount;
-  String? _liveOwner;
   DateTime? _liveStarted;
+  String _slotInitials = '';
   final _savedFrames = <int, String>{};
   final _userFrames = <int, String>{};
   final _liveFrames = <int, String>{};
@@ -90,7 +98,7 @@ class SanitasProtocol {
   List<int> get _details => [
     ...List.generate(
       3,
-      (i) => i < profile.initials.length ? profile.initials.codeUnitAt(i) : 0,
+      (i) => i < _slotInitials.length ? _slotInitials.codeUnitAt(i) : 0,
     ),
     profile.birthday.year - 1900,
     profile.birthday.month - 1,
@@ -114,53 +122,46 @@ class SanitasProtocol {
     return [ScaleBound(remote!), command(0x40, _uid)];
   }
 
+  /// Initials must be unique on the scale. Prefer the profile's own, fall back
+  /// to HC/HC1… when another scale user already shows the same letters.
+  String? _freeInitials() {
+    final taken = users
+        .where((u) => u.id != appSlotId)
+        .map((u) => u.initials.toUpperCase())
+        .toSet();
+    for (final candidate in [
+      profile.initials,
+      'HC',
+      for (var i = 1; i <= 9; i++) 'HC$i',
+    ]) {
+      if (!taken.contains(candidate)) return candidate;
+    }
+    return null;
+  }
+
+  /// No matching against scale profiles: use the app slot, write the active
+  /// profile's data into it (or create it once) and continue.
   List<ScaleEvent> _selectUser() {
-    final matches = users
-        .where(
-          (u) => profile.remoteId != null
-              ? u.id == profile.remoteId
-              : u.initials.toUpperCase() == profile.initials &&
-                    u.year == profile.birthday.year,
-        )
-        .toList();
-    if (matches.length > 1) {
-      return _fail(
-        'Mehrere passende Waagenprofile. Bitte ein eindeutiges Kürzel verwenden.',
-      );
+    final initials = _freeInitials();
+    if (initials == null) {
+      return _fail('Kein freies Kürzel auf der Waage verfügbar.');
     }
-    if (matches.isNotEmpty) {
-      remote = matches.single.id;
-      phase = 'details';
-      return [command(0x36, _uid)];
-    }
-    if (profile.remoteId != null) {
-      return _fail(
-        'Das gespeicherte Waagenprofil fehlt. Trenne die Zuordnung im Profil und verbinde die Waage neu.',
-      );
+    _slotInitials = initials;
+    remote = appSlotId;
+    if (users.any((u) => u.id == appSlotId)) {
+      phase = 'update';
+      return [
+        command(0x35, [..._uid, ..._details]),
+      ];
     }
     if (users.length >= capacity) {
       return _fail(
-        'Alle Benutzerplätze der Waage sind belegt. Nutze dein bestehendes Kürzel und Geburtsdatum.',
+        'Alle Benutzerplätze der Waage sind belegt. Lösche in der Sanitas-App einen nicht benötigten Benutzer und verbinde erneut.',
       );
     }
-    if (users.any((u) => u.initials.toUpperCase() == profile.initials)) {
-      return _fail(
-        'Dieses Kürzel gehört bereits zu einem anderen Waagenprofil. Bitte ein anderes Kürzel wählen.',
-      );
-    }
-    var highest = BigInt.from(100);
-    for (final u in users) {
-      final id = BigInt.parse(u.id, radix: 16);
-      if (id > highest) highest = id;
-    }
-    final next = highest + BigInt.one;
-    if (next.bitLength > 64) {
-      return _fail('Keine freie Benutzerkennung verfügbar.');
-    }
-    remote = next.toRadixString(16).padLeft(16, '0');
     phase = 'create';
     return [
-      ScaleMessage('Dein Profil wird auf der Waage eingerichtet.'),
+      ScaleMessage('Die Waage wird für HealthCoach eingerichtet.'),
       command(0x31, [..._uid, ..._details]),
     ];
   }
@@ -269,7 +270,6 @@ class SanitasProtocol {
         if (b[3] == 1 && b.length == 13 && b[4] == 1) {
           _clearLive();
           _liveStarted = time;
-          _liveOwner = hexBytes(b.sublist(5, 13));
           _liveFrames[1] = key;
         } else if (b[3] == 2 && b.length == 15 && _liveFrames.length == 1) {
           _livePart = b.sublist(4);
@@ -278,15 +278,9 @@ class SanitasProtocol {
             b.length == 15 &&
             _livePart != null &&
             _liveFrames.length == 2) {
-          if (_liveOwner == remote) {
-            out.addAll(_decode([..._livePart!, ...b.sublist(4)]));
-          } else {
-            out.add(
-              ScaleMessage(
-                'Messung gehört zu einem anderen Waagenprofil und wurde nicht übernommen.',
-              ),
-            );
-          }
+          // Every complete measurement belongs to the active app profile,
+          // regardless of which scale user the scale reports.
+          out.addAll(_decode([..._livePart!, ...b.sublist(4)]));
           _clearLive();
           // ACK a repeated final packet, but never combine it with old data.
           _liveFrames[3] = key;
@@ -306,7 +300,6 @@ class SanitasProtocol {
 
   void _clearLive() {
     _livePart = null;
-    _liveOwner = null;
     _liveStarted = null;
     _liveFrames.clear();
   }
@@ -332,28 +325,6 @@ class SanitasProtocol {
       }
       _userCount = b[4];
       if (b[4] == 0) return _selectUser();
-    }
-    if (cmd == 0x36 && phase == 'details') {
-      if (b[3] != 0 || b.length < 12) {
-        return _fail('Waagenprofil konnte nicht geprüft werden.');
-      }
-      final samePerson =
-          b[7] + 1900 == profile.birthday.year &&
-          b[8] + 1 == profile.birthday.month &&
-          b[9] == profile.birthday.day &&
-          ((b[11] & 0x80) != 0) == (profile.sex == 'male');
-      if (!samePerson) {
-        return _fail(
-          'Geburtsdatum oder Geschlecht stimmen nicht mit dem Waagenprofil überein. Prüfe dein Profil oder nutze ein neues Kürzel.',
-        );
-      }
-      if (b[10] != profile.heightCm || (b[11] & 0x0f) != profile.activity) {
-        phase = 'update';
-        return [
-          command(0x35, [..._uid, ..._details]),
-        ];
-      }
-      return [ScaleBound(remote!), ..._history()];
     }
     if (cmd == 0x35 && phase == 'update') {
       if (b[3] != 0) {
@@ -440,7 +411,9 @@ Measurement decodeMeasurement(List<int> b, Profile p, {required DateTime now}) {
     if (e.value > 0 && e.value <= e.key.max) values[e.key] = e.value;
   }
   return Measurement(
-    id: 'scale:${p.id}:$seconds',
+    // Profile-independent: the shared app slot re-sends its history on every
+    // connect, so a measurement is stored once, on the first profile receiving it.
+    id: 'scale:$seconds',
     profileId: p.id,
     time: time,
     values: values,

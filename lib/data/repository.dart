@@ -70,13 +70,7 @@ class Repository {
           .toList();
   Future<bool> saveMeasurement(Measurement m) async {
     return db.transaction((tx) async {
-      if ((await tx.query(
-        'deleted_measurements',
-        where: 'id = ?',
-        whereArgs: [m.id],
-      )).isNotEmpty) {
-        return false;
-      }
+      if (await _alreadyProcessed(tx, m)) return false;
       await tx.rawInsert(
         'INSERT OR IGNORE INTO measurements(id,profile_id,timestamp,data) VALUES(?,?,?,?)',
         [
@@ -88,6 +82,31 @@ class Repository {
       );
       return Sqflite.firstIntValue(await tx.rawQuery('SELECT changes()')) == 1;
     });
+  }
+
+  // Before 1.2, scale IDs included the app profile. Keep those records and
+  // deletion markers valid when the shared slot replays the same timestamp.
+  Future<bool> _alreadyProcessed(Transaction tx, Measurement m) async {
+    final seconds = m.time.millisecondsSinceEpoch ~/ 1000;
+    final scaleId =
+        m.source == 'scale' &&
+        (m.id == 'scale:$seconds' || m.id == 'scale:${m.profileId}:$seconds');
+    final where = scaleId ? 'id = ? OR id = ? OR id GLOB ?' : 'id = ?';
+    final args = scaleId
+        ? [m.id, 'scale:$seconds', 'scale:*:$seconds']
+        : [m.id];
+    for (final table in ['deleted_measurements', 'measurements']) {
+      if ((await tx.query(
+        table,
+        columns: ['id'],
+        where: where,
+        whereArgs: args,
+        limit: 1,
+      )).isNotEmpty) {
+        return true;
+      }
+    }
+    return false;
   }
 
   Future<void> deleteMeasurement(String id) async {
@@ -150,13 +169,7 @@ class Repository {
         }, conflictAlgorithm: ConflictAlgorithm.ignore);
       }
       for (final m in ms) {
-        if ((await tx.query(
-          'deleted_measurements',
-          where: 'id = ?',
-          whereArgs: [m.id],
-        )).isNotEmpty) {
-          continue;
-        }
+        if (await _alreadyProcessed(tx, m)) continue;
         await tx.insert('measurements', {
           'id': m.id,
           'profile_id': m.profileId,
